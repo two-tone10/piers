@@ -163,3 +163,69 @@ export async function getPastVoyages(userId) {
   if (error) throw error;
   return data || [];
 }
+
+// ── Dev seeder ────────────────────────────────────────────────────────────────
+
+const FAKE_USERS = [
+  { handle: 'marco_d' },
+  { handle: 'suli_w' },
+  { handle: 'priya_k' },
+  { handle: 'cam_r' },
+  { handle: 'nadia_t' },
+];
+
+const FAKE_VOYAGES = [
+  { goal: 'Finish the first draft of my short story — all three scenes written by Sunday.', obstacle: 'I keep editing as I go instead of just getting words on the page.' },
+  { goal: 'Call my dad three times this week. Not text — actually call.', obstacle: 'I always find an excuse when the moment comes.' },
+  { goal: 'Run four times this week, minimum 20 minutes each.', obstacle: 'Morning motivation. I never want to start.' },
+  { goal: 'Spend zero money on things I don\'t need. No impulse buys, no apps, no food delivery.', obstacle: 'Stress-buying when work gets hard.' },
+  { goal: 'Read for 30 minutes every night before bed instead of scrolling.', obstacle: 'My phone is always within reach and it\'s too easy to grab.' },
+];
+
+export async function seedOpenVoyages() {
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const results = [];
+  for (let i = 0; i < 3; i++) {
+    const fakeUser = FAKE_USERS[i];
+    const fakeVoyage = FAKE_VOYAGES[i];
+    const { data: user } = await supabase
+      .from('piers_users')
+      .upsert({ handle: fakeUser.handle }, { onConflict: 'handle' })
+      .select()
+      .single();
+    if (!user) continue;
+    const { data: voyage } = await supabase
+      .from('piers_voyages')
+      .insert({ user_id: user.id, goal: fakeVoyage.goal, obstacle: fakeVoyage.obstacle, status: 'open', expires_at: expiresAt })
+      .select()
+      .single();
+    if (voyage) results.push(voyage);
+  }
+  return results;
+}
+
+export async function seedPierMembers(voyageId) {
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  for (let i = 3; i < 5; i++) {
+    const fakeUser = FAKE_USERS[i];
+    const { data: user } = await supabase
+      .from('piers_users')
+      .upsert({ handle: fakeUser.handle }, { onConflict: 'handle' })
+      .select()
+      .single();
+    if (!user) continue;
+    // Give them a voyage so they qualify to join a pier
+    await supabase
+      .from('piers_voyages')
+      .insert({ user_id: user.id, goal: FAKE_VOYAGES[i % FAKE_VOYAGES.length].goal, obstacle: FAKE_VOYAGES[i % FAKE_VOYAGES.length].obstacle, status: 'open', expires_at: expiresAt })
+      .select();
+    await supabase
+      .from('piers_pier_members')
+      .upsert({ voyage_id: voyageId, user_id: user.id }, { onConflict: 'voyage_id,user_id' });
+  }
+  // Push voyage to underway
+  await supabase
+    .from('piers_voyages')
+    .update({ status: 'underway' })
+    .eq('id', voyageId);
+}
