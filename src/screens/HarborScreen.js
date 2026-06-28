@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, RefreshControl, ActivityIndicator,
 } from 'react-native';
-import { colors, radius } from '../lib/theme';
+import { colors, radius, fonts } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 
 function timeAgo(ts) {

@@ -1,14 +1,23 @@
 import React from 'react';
+import { View, Text, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
-import { Text } from 'react-native';
+import {
+  useFonts,
+  Raleway_300Light,
+  Raleway_400Regular,
+  Raleway_400Regular_Italic,
+  Raleway_600SemiBold,
+  Raleway_700Bold,
+  Raleway_700Bold_Italic,
+} from '@expo-google-fonts/raleway';
 
 import { useUser } from './src/hooks/useUser';
-import { colors } from './src/lib/theme';
+import { colors, fonts } from './src/lib/theme';
 
-import OnboardingScreen from './src/screens/OnboardingScreen';
+import OnboardingFlow from './src/screens/OnboardingFlow';
 import HomeScreen from './src/screens/HomeScreen';
 import HarborScreen from './src/screens/HarborScreen';
 import LogbookScreen from './src/screens/LogbookScreen';
@@ -27,20 +36,16 @@ const stackOptions = {
   animation: 'slide_from_right',
 };
 
-const tabBarStyle = {
-  backgroundColor: colors.bgCard,
-  borderTopColor: colors.border,
-  borderTopWidth: 1,
-  paddingBottom: 8,
-  paddingTop: 8,
-  height: 64,
-};
-
-function TabIcon({ label, focused }) {
-  const icons = { Home: '⛵', Harbor: '⚓', Logbook: '📖' };
+function TabLabel({ label, focused }) {
   return (
-    <Text style={{ fontSize: focused ? 22 : 18, opacity: focused ? 1 : 0.45 }}>
-      {icons[label]}
+    <Text style={{
+      fontFamily: focused ? fonts.semiBold : fonts.regular,
+      fontSize: 11,
+      color: focused ? colors.gold : colors.textDim,
+      letterSpacing: 0.5,
+      marginBottom: 2,
+    }}>
+      {label}
     </Text>
   );
 }
@@ -48,18 +53,41 @@ function TabIcon({ label, focused }) {
 function Tabs({ user }) {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      screenOptions={{
         headerShown: false,
-        tabBarStyle,
+        tabBarStyle: {
+          backgroundColor: colors.bgCard,
+          borderTopColor: colors.border,
+          borderTopWidth: 1,
+          height: 68,
+          paddingTop: 10,
+        },
         tabBarLabel: () => null,
-        tabBarIcon: ({ focused }) => <TabIcon label={route.name} focused={focused} />,
-      })}
+      }}
     >
-      <Tab.Screen name="Home">
+      <Tab.Screen
+        name="Home"
+        options={{
+          tabBarIcon: ({ focused }) => <TabLabel label="Home" focused={focused} />,
+        }}
+      >
         {(props) => <HomeScreen {...props} user={user} />}
       </Tab.Screen>
-      <Tab.Screen name="Harbor" component={HarborScreen} />
-      <Tab.Screen name="Logbook">
+
+      <Tab.Screen
+        name="Community"
+        component={HarborScreen}
+        options={{
+          tabBarIcon: ({ focused }) => <TabLabel label="Community" focused={focused} />,
+        }}
+      />
+
+      <Tab.Screen
+        name="My Record"
+        options={{
+          tabBarIcon: ({ focused }) => <TabLabel label="My Record" focused={focused} />,
+        }}
+      >
         {(props) => <LogbookScreen {...props} user={user} />}
       </Tab.Screen>
     </Tab.Navigator>
@@ -67,15 +95,30 @@ function Tabs({ user }) {
 }
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Raleway_300Light,
+    Raleway_400Regular,
+    Raleway_400Regular_Italic,
+    Raleway_600SemiBold,
+    Raleway_700Bold,
+    Raleway_700Bold_Italic,
+  });
+
   const { user, loading, createUser } = useUser();
 
-  if (loading) return null;
+  if (!fontsLoaded || loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator color={colors.gold} />
+      </View>
+    );
+  }
 
   if (!user) {
     return (
       <>
         <StatusBar style="light" />
-        <OnboardingScreen onCreated={createUser} />
+        <OnboardingFlow onCreated={createUser} />
       </>
     );
   }

@@ -29,7 +29,8 @@
         {
           "color": "#e8c97a"
         }
-      ]
+      ],
+      "expo-splash-screen"
     ]
   }
 }

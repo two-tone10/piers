@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { colors, radius } from '../lib/theme';
+import { colors, radius, fonts } from '../lib/theme';
 import { castOff } from '../lib/supabase';
 
 export default function CastOffScreen({ route, navigation, user }) {

@@ -18,13 +18,30 @@ export const colors = {
   roseBorder: 'rgba(212,144,138,0.22)',
 };
 
-export const radius = {
-  sm: 8,
-  md: 14,
-  lg: 20,
+export const radius = { sm: 8, md: 14, lg: 20 };
+
+export const fonts = {
+  regular: 'Raleway_400Regular',
+  italic: 'Raleway_400Regular_Italic',
+  semiBold: 'Raleway_600SemiBold',
+  bold: 'Raleway_700Bold',
+  boldItalic: 'Raleway_700Bold_Italic',
+  light: 'Raleway_300Light',
 };
 
-export const type = {
-  serif: 'serif',
-  sans: 'System',
+// Language — plain human words, no maritime jargon
+export const copy = {
+  goal: 'goal',
+  goals: 'goals',
+  supporters: 'supporters',
+  supporting: 'supporting',
+  openGoals: 'Goals seeking support',
+  setGoal: 'Set your goal',
+  markDone: 'I did it',
+  inProgress: 'In progress',
+  waiting: 'Waiting for supporters',
+  community: 'Community',
+  record: 'My Record',
+  wordsOfSupport: 'Words of support',
+  reckoning: 'Reckoning',
 };
