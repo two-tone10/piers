@@ -36,20 +36,6 @@ const stackOptions = {
   animation: 'slide_from_right',
 };
 
-function TabLabel({ label, focused }) {
-  return (
-    <Text style={{
-      fontFamily: focused ? fonts.semiBold : fonts.regular,
-      fontSize: 11,
-      color: focused ? colors.gold : colors.textDim,
-      letterSpacing: 0.5,
-      marginBottom: 2,
-    }}>
-      {label}
-    </Text>
-  );
-}
-
 function Tabs({ user }) {
   return (
     <Tab.Navigator
@@ -59,34 +45,37 @@ function Tabs({ user }) {
           backgroundColor: colors.bgCard,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 68,
-          paddingTop: 10,
+          height: 64,
         },
-        tabBarLabel: () => null,
+        tabBarShowLabel: true,
+        tabBarIconStyle: { display: 'none' },
+        tabBarLabelStyle: {
+          fontSize: 13,
+          letterSpacing: 0.3,
+          marginBottom: 12,
+          marginTop: 12,
+        },
+        tabBarActiveTintColor: colors.gold,
+        tabBarInactiveTintColor: colors.textDim,
+        tabBarLabelPosition: 'below-icon',
       }}
     >
       <Tab.Screen
         name="Home"
-        options={{
-          tabBarIcon: ({ focused }) => <TabLabel label="Home" focused={focused} />,
-        }}
+        options={{ tabBarLabel: 'Home' }}
       >
         {(props) => <HomeScreen {...props} user={user} />}
       </Tab.Screen>
 
       <Tab.Screen
-        name="Community"
+        name="Together"
         component={HarborScreen}
-        options={{
-          tabBarIcon: ({ focused }) => <TabLabel label="Community" focused={focused} />,
-        }}
+        options={{ tabBarLabel: 'Together' }}
       />
 
       <Tab.Screen
-        name="My Record"
-        options={{
-          tabBarIcon: ({ focused }) => <TabLabel label="My Record" focused={focused} />,
-        }}
+        name="Record"
+        options={{ tabBarLabel: 'Record' }}
       >
         {(props) => <LogbookScreen {...props} user={user} />}
       </Tab.Screen>
@@ -134,7 +123,9 @@ export default function App() {
           <Stack.Screen name="CastOff">
             {(props) => <CastOffScreen {...props} user={user} />}
           </Stack.Screen>
-          <Stack.Screen name="MyVoyage" component={MyVoyageScreen} />
+          <Stack.Screen name="MyVoyage">
+            {(props) => <MyVoyageScreen {...props} user={user} />}
+          </Stack.Screen>
           <Stack.Screen name="JoinPier">
             {(props) => <JoinPierScreen {...props} user={user} />}
           </Stack.Screen>

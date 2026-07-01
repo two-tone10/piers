@@ -53,11 +53,11 @@ export default function JoinPierScreen({ route, navigation, user }) {
 
       <View style={styles.rulesCard}>
         <Text style={styles.rulesTitle}>Rules of the pier</Text>
-        <Text style={styles.rule}>⚓  You can only stand on one pier at a time.</Text>
-        <Text style={styles.rule}>⛵  You must have your own voyage out to sea.</Text>
-        <Text style={styles.rule}>📡  You can send signals — quotes, words — during the week.</Text>
-        <Text style={styles.rule}>🤐  You cannot comment, question, or intervene.</Text>
-        <Text style={styles.rule}>🎉  You can acknowledge when they return or the week ends.</Text>
+        <Text style={styles.rule}>You can stand on up to 3 piers at a time.</Text>
+        <Text style={styles.rule}>You can send signals — quotes, words of support — during the week.</Text>
+        <Text style={styles.rule}>You can respond to their daily pulse with a single curated word.</Text>
+        <Text style={styles.rule}>You cannot comment, question, or intervene.</Text>
+        <Text style={styles.rule}>You can acknowledge them when they complete it or the week ends.</Text>
       </View>
 
       <TouchableOpacity

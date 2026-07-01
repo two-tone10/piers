@@ -6,7 +6,7 @@ import {
 import { colors, radius, fonts } from '../lib/theme';
 import {
   getMyVoyage, getOpenVoyages, getPierMembers,
-  getActiveMembership, getSignals, seedOpenVoyages, seedPierMembers,
+  getActiveMemberships, seedOpenVoyages, seedPierMembers,
 } from '../lib/supabase';
 
 const { width: W } = Dimensions.get('window');
@@ -31,8 +31,7 @@ export default function HomeScreen({ user, navigation }) {
   const [myVoyage, setMyVoyage] = useState(null);
   const [pierMembers, setPierMembers] = useState([]);
   const [openVoyages, setOpenVoyages] = useState([]);
-  const [membership, setMembership] = useState(null);
-  const [signals, setSignals] = useState([]);
+  const [memberships, setMemberships] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [devVisible, setDevVisible] = useState(false);
@@ -40,16 +39,15 @@ export default function HomeScreen({ user, navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const [voyage, open, mem] = await Promise.all([
+      const [voyage, open, mems] = await Promise.all([
         getMyVoyage(user.id),
         getOpenVoyages(user.id),
-        getActiveMembership(user.id),
+        getActiveMemberships(user.id),
       ]);
       setMyVoyage(voyage);
       setOpenVoyages(open);
-      setMembership(mem);
+      setMemberships(mems);
       if (voyage) setPierMembers(await getPierMembers(voyage.id));
-      if (mem?.piers_voyages) setSignals(await getSignals(mem.piers_voyages.id));
     } catch (e) { console.error(e); }
   }, [user.id]);
 
@@ -81,7 +79,7 @@ export default function HomeScreen({ user, navigation }) {
 
   const needsReckoning = myVoyage && ['returned', 'lost'].includes(myVoyage.status) && !myVoyage.reckoning_at;
   const hasActiveGoal = myVoyage && ['open', 'underway'].includes(myVoyage.status);
-  const hasSupporting = !!membership?.piers_voyages;
+  const canJoinMore = memberships.length < 3;
 
   return (
     <>
@@ -101,7 +99,7 @@ export default function HomeScreen({ user, navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Reckoning prompt — rose card, full width */}
+        {/* Reckoning prompt */}
         {needsReckoning && (
           <TouchableOpacity
             style={[s.fullCard, s.fullCardRose]}
@@ -135,24 +133,51 @@ export default function HomeScreen({ user, navigation }) {
             />
           )}
 
-          {/* Supporting box */}
-          {hasSupporting ? (
+          {/* Join / capacity box */}
+          {memberships.length >= 3 ? (
             <QuickBox
               label="Supporting"
-              title={`@${membership.piers_voyages.piers_users?.handle ?? '…'}`}
-              sub={membership.piers_voyages.goal?.slice(0, 48) + '…'}
-              onPress={() => navigation.navigate('PierWatch', { membership, signals })}
+              title={`${memberships.length} piers`}
+              sub="You're at capacity. Acknowledge one to make room."
+              disabled
             />
           ) : (
             <QuickBox
-              label="Support"
-              title="Stand on a pier"
-              sub="Find a goal and be a witness."
+              label={memberships.length > 0 ? `${memberships.length} of 3` : 'Support'}
+              title={memberships.length > 0 ? 'Stand on another pier' : 'Stand on a pier'}
+              sub={memberships.length > 0 ? 'You can support up to 3 at once.' : 'Find a goal and be a witness.'}
               onPress={() => {}}
               disabled={openVoyages.length === 0}
             />
           )}
         </View>
+
+        {/* Active memberships */}
+        {memberships.length > 0 && (
+          <>
+            <Text style={s.sectionTitle}>You're standing on</Text>
+            {memberships.map((m) => {
+              const v = m.piers_voyages;
+              if (!v) return null;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  style={s.membershipCard}
+                  onPress={() => navigation.navigate('PierWatch', { membership: m })}
+                >
+                  <View style={s.membershipRow}>
+                    <Text style={s.membershipHandle}>@{v.piers_users?.handle}</Text>
+                    <Text style={s.membershipStatus}>
+                      {v.status === 'open' ? 'Seeking support' : v.status === 'underway' ? 'Underway' : 'Ended'}
+                    </Text>
+                  </View>
+                  <Text style={s.membershipGoal} numberOfLines={2}>{v.goal}</Text>
+                  <Text style={s.membershipCta}>View their pier →</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </>
+        )}
 
         {/* Goals seeking support */}
         <Text style={s.sectionTitle}>Goals seeking support</Text>
@@ -166,12 +191,14 @@ export default function HomeScreen({ user, navigation }) {
           openVoyages.map((v) => (
             <TouchableOpacity
               key={v.id}
-              style={s.goalCard}
-              onPress={() => navigation.navigate('JoinPier', { voyage: v })}
+              style={[s.goalCard, !canJoinMore && s.goalCardDim]}
+              onPress={() => canJoinMore && navigation.navigate('JoinPier', { voyage: v })}
             >
               <Text style={s.goalHandle}>@{v.piers_users?.handle}</Text>
               <Text style={s.goalText}>{v.goal}</Text>
-              <Text style={s.goalCta}>Stand on their pier →</Text>
+              <Text style={s.goalCta}>
+                {canJoinMore ? 'Stand on their pier →' : 'Acknowledge a pier to make room'}
+              </Text>
             </TouchableOpacity>
           ))
         )}
@@ -236,10 +263,22 @@ const s = StyleSheet.create({
   boxSub: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim, lineHeight: 17 },
   boxSubAccent: { color: colors.textMid },
 
-  sectionTitle: { fontFamily: fonts.bold, fontSize: 18, color: colors.text, marginTop: 8 },
+  sectionTitle: { fontFamily: fonts.bold, fontSize: 18, color: colors.text, marginTop: 4 },
   sectionSub: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid, lineHeight: 18, marginTop: -8 },
 
+  membershipCard: {
+    backgroundColor: colors.bgCard, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.blueBorder,
+    padding: 18, gap: 6,
+  },
+  membershipRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  membershipHandle: { fontFamily: fonts.regular, fontSize: 12, color: colors.blue },
+  membershipStatus: { fontFamily: fonts.regular, fontSize: 11, color: colors.textDim },
+  membershipGoal: { fontFamily: fonts.regular, fontSize: 15, color: colors.text, lineHeight: 21 },
+  membershipCta: { fontFamily: fonts.semiBold, fontSize: 12, color: colors.blue },
+
   goalCard: { backgroundColor: colors.bgCard, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 18, gap: 6 },
+  goalCardDim: { opacity: 0.5 },
   goalHandle: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMid },
   goalText: { fontFamily: fonts.regular, fontSize: 15, color: colors.text, lineHeight: 21 },
   goalCta: { fontFamily: fonts.semiBold, fontSize: 12, color: colors.gold },

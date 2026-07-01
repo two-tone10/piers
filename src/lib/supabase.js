@@ -19,30 +19,36 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-// ── Piers API helpers ─────────────────────────────────────────────────────────
+// ── Pulse constants ───────────────────────────────────────────────────────────
 
-export async function dbGet(table, query = '') {
-  const { data, error } = await supabase.from(table).select('*').match(query);
-  if (error) throw error;
-  return data;
+export const PULSE_OPTIONS = [
+  { key: 'making_progress', label: 'Making progress.' },
+  { key: 'pushing_through', label: 'Pushing through.' },
+  { key: 'stayed_the_course', label: 'Stayed the course.' },
+  { key: 'rough_one', label: 'Had a rough one.' },
+];
+
+export const RESPONSE_WORDS = [
+  'Proud.', 'Keep going.', 'Strength.', 'I see you.',
+  'Steady.', "You've got this.", 'Still here.', 'Onwards.',
+  'Real.', 'Good.', 'Hold on.', 'Together.',
+];
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-async function rpc(table, method, body, opts = {}) {
-  const res = await supabase.from(table)[method](body, opts);
-  if (res.error) throw res.error;
-  return res.data;
-}
+// ── Goals ─────────────────────────────────────────────────────────────────────
 
 export async function castOff({ userId, goal, obstacle }) {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const data = await rpc('piers_voyages', 'insert', {
-    user_id: userId,
-    goal,
-    obstacle,
-    status: 'open',
-    expires_at: expiresAt,
-  }, { returning: 'representation' });
-  return data?.[0];
+  const { data, error } = await supabase
+    .from('piers_voyages')
+    .insert({ user_id: userId, goal, obstacle, status: 'open', expires_at: expiresAt })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function getOpenVoyages(excludeUserId) {
@@ -70,6 +76,16 @@ export async function getMyVoyage(userId) {
   return data;
 }
 
+export async function sailHome(voyageId) {
+  const { error } = await supabase
+    .from('piers_voyages')
+    .update({ status: 'returned', completed_at: new Date().toISOString() })
+    .eq('id', voyageId);
+  if (error) throw error;
+}
+
+// ── Pier members ──────────────────────────────────────────────────────────────
+
 export async function getPierMembers(voyageId) {
   const { data, error } = await supabase
     .from('piers_pier_members')
@@ -79,25 +95,17 @@ export async function getPierMembers(voyageId) {
   return data || [];
 }
 
-export async function getSignals(voyageId) {
-  const { data, error } = await supabase
-    .from('piers_signals')
-    .select('*, piers_users(handle)')
-    .eq('voyage_id', voyageId)
-    .order('created_at', { ascending: true });
-  if (error) throw error;
-  return data || [];
-}
-
 export async function joinPier({ voyageId, userId }) {
+  // Allow up to 3 concurrent pier memberships
   const { data: existing, error: checkErr } = await supabase
     .from('piers_pier_members')
     .select('id')
     .eq('user_id', userId)
-    .is('acknowledged_at', null)
-    .maybeSingle();
+    .is('acknowledged_at', null);
   if (checkErr) throw checkErr;
-  if (existing) throw new Error('You are already standing on a pier. You can only watch one voyage at a time.');
+  if (existing?.length >= 3) {
+    throw new Error('You are already supporting three people. That\'s the limit — acknowledge one first.');
+  }
 
   const { error } = await supabase
     .from('piers_pier_members')
@@ -117,19 +125,15 @@ export async function joinPier({ voyageId, userId }) {
   }
 }
 
-export async function sailHome(voyageId) {
-  const { error } = await supabase
-    .from('piers_voyages')
-    .update({ status: 'returned', completed_at: new Date().toISOString() })
-    .eq('id', voyageId);
+export async function getActiveMemberships(userId) {
+  const { data, error } = await supabase
+    .from('piers_pier_members')
+    .select('*, piers_voyages(*, piers_users(handle))')
+    .eq('user_id', userId)
+    .is('acknowledged_at', null)
+    .limit(3);
   if (error) throw error;
-}
-
-export async function sendSignal({ voyageId, senderId, quote, author }) {
-  const { error } = await supabase
-    .from('piers_signals')
-    .insert({ voyage_id: voyageId, sender_id: senderId, quote, author: author || null });
-  if (error) throw error;
+  return data || [];
 }
 
 export async function acknowledge({ voyageId, userId, text }) {
@@ -141,16 +145,58 @@ export async function acknowledge({ voyageId, userId, text }) {
   if (error) throw error;
 }
 
-export async function getActiveMembership(userId) {
+// ── Signals (quotes/inspiration) ──────────────────────────────────────────────
+
+export async function getSignals(voyageId) {
   const { data, error } = await supabase
-    .from('piers_pier_members')
-    .select('*, piers_voyages(*)')
-    .eq('user_id', userId)
-    .is('acknowledged_at', null)
-    .maybeSingle();
+    .from('piers_signals')
+    .select('*, piers_users(handle)')
+    .eq('voyage_id', voyageId)
+    .order('created_at', { ascending: true });
   if (error) throw error;
-  return data;
+  return data || [];
 }
+
+export async function sendSignal({ voyageId, senderId, quote, author }) {
+  const { error } = await supabase
+    .from('piers_signals')
+    .insert({ voyage_id: voyageId, sender_id: senderId, quote, author: author || null });
+  if (error) throw error;
+}
+
+// ── Pulses ────────────────────────────────────────────────────────────────────
+
+export async function sendPulse({ voyageId, status }) {
+  const { error } = await supabase
+    .from('piers_pulses')
+    .upsert(
+      { voyage_id: voyageId, status, date_key: todayKey() },
+      { onConflict: 'voyage_id,date_key' }
+    );
+  if (error) throw error;
+}
+
+export async function getPulses(voyageId) {
+  const { data, error } = await supabase
+    .from('piers_pulses')
+    .select('*, piers_pulse_responses(*, piers_users(handle))')
+    .eq('voyage_id', voyageId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function respondToPulse({ pulseId, senderId, word }) {
+  const { error } = await supabase
+    .from('piers_pulse_responses')
+    .upsert(
+      { pulse_id: pulseId, sender_id: senderId, word },
+      { onConflict: 'pulse_id,sender_id' }
+    );
+  if (error) throw error;
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
 
 export async function getPastVoyages(userId) {
   const { data, error } = await supabase
@@ -186,19 +232,15 @@ export async function seedOpenVoyages() {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const results = [];
   for (let i = 0; i < 3; i++) {
-    const fakeUser = FAKE_USERS[i];
-    const fakeVoyage = FAKE_VOYAGES[i];
     const { data: user } = await supabase
       .from('piers_users')
-      .upsert({ handle: fakeUser.handle }, { onConflict: 'handle' })
-      .select()
-      .single();
+      .upsert({ handle: FAKE_USERS[i].handle }, { onConflict: 'handle' })
+      .select().single();
     if (!user) continue;
     const { data: voyage } = await supabase
       .from('piers_voyages')
-      .insert({ user_id: user.id, goal: fakeVoyage.goal, obstacle: fakeVoyage.obstacle, status: 'open', expires_at: expiresAt })
-      .select()
-      .single();
+      .insert({ user_id: user.id, goal: FAKE_VOYAGES[i].goal, obstacle: FAKE_VOYAGES[i].obstacle, status: 'open', expires_at: expiresAt })
+      .select().single();
     if (voyage) results.push(voyage);
   }
   return results;
@@ -207,25 +249,17 @@ export async function seedOpenVoyages() {
 export async function seedPierMembers(voyageId) {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   for (let i = 3; i < 5; i++) {
-    const fakeUser = FAKE_USERS[i];
     const { data: user } = await supabase
       .from('piers_users')
-      .upsert({ handle: fakeUser.handle }, { onConflict: 'handle' })
-      .select()
-      .single();
+      .upsert({ handle: FAKE_USERS[i].handle }, { onConflict: 'handle' })
+      .select().single();
     if (!user) continue;
-    // Give them a voyage so they qualify to join a pier
-    await supabase
-      .from('piers_voyages')
-      .insert({ user_id: user.id, goal: FAKE_VOYAGES[i % FAKE_VOYAGES.length].goal, obstacle: FAKE_VOYAGES[i % FAKE_VOYAGES.length].obstacle, status: 'open', expires_at: expiresAt })
-      .select();
-    await supabase
-      .from('piers_pier_members')
+    await supabase.from('piers_voyages').insert({
+      user_id: user.id, goal: FAKE_VOYAGES[i % FAKE_VOYAGES.length].goal,
+      obstacle: FAKE_VOYAGES[i % FAKE_VOYAGES.length].obstacle, status: 'open', expires_at: expiresAt,
+    });
+    await supabase.from('piers_pier_members')
       .upsert({ voyage_id: voyageId, user_id: user.id }, { onConflict: 'voyage_id,user_id' });
   }
-  // Push voyage to underway
-  await supabase
-    .from('piers_voyages')
-    .update({ status: 'underway' })
-    .eq('id', voyageId);
+  await supabase.from('piers_voyages').update({ status: 'underway' }).eq('id', voyageId);
 }
