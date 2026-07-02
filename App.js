@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ActivityIndicator } from 'react-native';
+import { View, Text, ActivityIndicator, Dimensions } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -16,6 +16,7 @@ import {
 
 import { useUser } from './src/hooks/useUser';
 import { colors, fonts } from './src/lib/theme';
+import PierIllustration from './src/components/PierIllustration';
 
 import OnboardingFlow from './src/screens/OnboardingFlow';
 import HomeScreen from './src/screens/HomeScreen';
@@ -29,12 +30,28 @@ import ReckoningScreen from './src/screens/ReckoningScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+const { width: W } = Dimensions.get('window');
 
 const stackOptions = {
   headerShown: false,
   contentStyle: { backgroundColor: colors.bg },
   animation: 'slide_from_right',
 };
+
+function TabLabel({ label, focused }) {
+  return (
+    <Text style={{
+      fontFamily: focused ? fonts.semiBold : fonts.regular,
+      fontSize: 12,
+      color: focused ? colors.gold : colors.textDim,
+      letterSpacing: 0.4,
+      textAlign: 'center',
+      marginTop: 2,
+    }}>
+      {label}
+    </Text>
+  );
+}
 
 function Tabs({ user }) {
   return (
@@ -45,24 +62,16 @@ function Tabs({ user }) {
           backgroundColor: colors.bgCard,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 64,
+          height: 62,
+          paddingBottom: 8,
+          paddingTop: 8,
         },
-        tabBarShowLabel: true,
-        tabBarIconStyle: { display: 'none' },
-        tabBarLabelStyle: {
-          fontSize: 13,
-          letterSpacing: 0.3,
-          marginBottom: 12,
-          marginTop: 12,
-        },
-        tabBarActiveTintColor: colors.gold,
-        tabBarInactiveTintColor: colors.textDim,
-        tabBarLabelPosition: 'below-icon',
+        tabBarLabel: () => null,
       }}
     >
       <Tab.Screen
         name="Home"
-        options={{ tabBarLabel: 'Home' }}
+        options={{ tabBarIcon: ({ focused }) => <TabLabel label="Home" focused={focused} /> }}
       >
         {(props) => <HomeScreen {...props} user={user} />}
       </Tab.Screen>
@@ -70,16 +79,35 @@ function Tabs({ user }) {
       <Tab.Screen
         name="Together"
         component={HarborScreen}
-        options={{ tabBarLabel: 'Together' }}
+        options={{ tabBarIcon: ({ focused }) => <TabLabel label="Together" focused={focused} /> }}
       />
 
       <Tab.Screen
         name="Record"
-        options={{ tabBarLabel: 'Record' }}
+        options={{ tabBarIcon: ({ focused }) => <TabLabel label="Record" focused={focused} /> }}
       >
         {(props) => <LogbookScreen {...props} user={user} />}
       </Tab.Screen>
     </Tab.Navigator>
+  );
+}
+
+function SplashScreen() {
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <PierIllustration width={W} height={W * 1.1} />
+      <View style={{ position: 'absolute', bottom: 70, alignItems: 'center', gap: 6 }}>
+        <Text style={{
+          fontSize: 38,
+          fontWeight: '300',
+          color: colors.gold,
+          letterSpacing: 12,
+        }}>
+          piers
+        </Text>
+        <ActivityIndicator color={colors.gold} style={{ opacity: 0.4 }} />
+      </View>
+    </View>
   );
 }
 
@@ -97,9 +125,10 @@ export default function App() {
 
   if (!fontsLoaded || loading) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator color={colors.gold} />
-      </View>
+      <>
+        <StatusBar style="light" />
+        <SplashScreen />
+      </>
     );
   }
 
