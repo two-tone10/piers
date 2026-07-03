@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert,
+  View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
 import { sailHome, sendPulse, getPulses, PULSE_OPTIONS } from '../lib/supabase';
@@ -39,6 +39,8 @@ export default function MyVoyageScreen({ route, navigation, user }) {
   const [sendingPulse, setSendingPulse] = useState(false);
   const [sailLoading, setSailLoading] = useState(false);
   const [tab, setTab] = useState('pier');
+  const [selectedStatus, setSelectedStatus] = useState(null);
+  const [pulseNote, setPulseNote] = useState('');
 
   const loadPulses = useCallback(async () => {
     try {
@@ -55,10 +57,12 @@ export default function MyVoyageScreen({ route, navigation, user }) {
 
   const todaysPulse = pulses.find((p) => p.date_key === todayKey());
 
-  async function handleSendPulse(status) {
+  async function handleSendPulse(status, note) {
     setSendingPulse(true);
     try {
-      await sendPulse({ voyageId: voyage.id, status });
+      await sendPulse({ voyageId: voyage.id, status, note });
+      setSelectedStatus(null);
+      setPulseNote('');
       await loadPulses();
     } catch (e) {
       Alert.alert('Error', e.message);
@@ -93,158 +97,198 @@ export default function MyVoyageScreen({ route, navigation, user }) {
   const isUnderway = voyage.status === 'underway';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back}>
-        <Text style={styles.backText}>← Back</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.title}>Your goal</Text>
-      <Text style={styles.timer}>{timeLeft(voyage.expires_at)}</Text>
-
-      <View style={[styles.card, styles.cardGold]}>
-        <Text style={styles.fieldLabel}>Goal</Text>
-        <Text style={styles.goalText}>{voyage.goal}</Text>
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.fieldLabel}>Biggest obstacle</Text>
-        <Text style={styles.obstacleText}>{voyage.obstacle}</Text>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tab, tab === 'pier' && styles.tabActive]}
-          onPress={() => setTab('pier')}
-        >
-          <Text style={[styles.tabText, tab === 'pier' && styles.tabTextActive]}>Your Pier</Text>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.back}>
+          <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, tab === 'pulse' && styles.tabActive]}
-          onPress={() => setTab('pulse')}
-        >
-          <Text style={[styles.tabText, tab === 'pulse' && styles.tabTextActive]}>Daily Pulse</Text>
-        </TouchableOpacity>
-      </View>
 
-      {tab === 'pier' && (
-        <>
-          {pierMembers.length === 0 ? (
-            <Text style={styles.empty}>Your pier is empty. Others will find your goal when they're looking for someone to support.</Text>
-          ) : (
-            pierMembers.map((m) => (
-              <View key={m.id} style={styles.memberRow}>
-                <Text style={styles.memberHandle}>@{m.piers_users?.handle}</Text>
-                <Text style={styles.memberJoined}>Standing since {new Date(m.joined_at).toLocaleDateString()}</Text>
-              </View>
-            ))
-          )}
+        <Text style={styles.title}>Your goal</Text>
+        <Text style={styles.timer}>{timeLeft(voyage.expires_at)}</Text>
 
-          {pierMembers.length < 2 && (
-            <View style={styles.waitingNotice}>
-              <Text style={styles.waitingText}>
-                Waiting for {2 - pierMembers.length} more to stand on your pier
-              </Text>
-            </View>
-          )}
+        <View style={[styles.card, styles.cardGold]}>
+          <Text style={styles.fieldLabel}>Goal</Text>
+          <Text style={styles.goalText}>{voyage.goal}</Text>
+        </View>
 
-          {isUnderway && (
-            <TouchableOpacity
-              style={[styles.btn, sailLoading && styles.btnDisabled]}
-              onPress={confirmReturn}
-              disabled={sailLoading}
-            >
-              {sailLoading
-                ? <ActivityIndicator color={colors.bg} />
-                : <Text style={styles.btnText}>I completed my goal</Text>}
-            </TouchableOpacity>
-          )}
+        <View style={styles.card}>
+          <Text style={styles.fieldLabel}>Biggest obstacle</Text>
+          <Text style={styles.obstacleText}>{voyage.obstacle}</Text>
+        </View>
 
-          <Text style={styles.fine}>
-            Your pier cannot respond to your voyage until you complete it or the week expires.
-            They can send signals and respond to your daily pulse.
-          </Text>
-        </>
-      )}
+        {/* Tabs */}
+        <View style={styles.tabs}>
+          <TouchableOpacity
+            style={[styles.tab, tab === 'pier' && styles.tabActive]}
+            onPress={() => setTab('pier')}
+          >
+            <Text style={[styles.tabText, tab === 'pier' && styles.tabTextActive]}>Your Pier</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, tab === 'pulse' && styles.tabActive]}
+            onPress={() => setTab('pulse')}
+          >
+            <Text style={[styles.tabText, tab === 'pulse' && styles.tabTextActive]}>Daily Pulse</Text>
+          </TouchableOpacity>
+        </View>
 
-      {tab === 'pulse' && (
-        <>
-          {/* Send today's pulse */}
-          <View style={styles.pulseSection}>
-            <Text style={styles.pulseSectionLabel}>
-              {todaysPulse ? 'Today\'s pulse — sent' : 'How\'s today going?'}
-            </Text>
-            {todaysPulse ? (
-              <View style={[styles.card, styles.cardPulse]}>
-                <Text style={styles.pulseSentLabel}>You sent</Text>
-                <Text style={styles.pulseSentText}>{PULSE_LABELS[todaysPulse.status]}</Text>
-                {todaysPulse.piers_pulse_responses?.length > 0 && (
-                  <View style={styles.responsesBlock}>
-                    <Text style={styles.responsesLabel}>From your pier</Text>
-                    {todaysPulse.piers_pulse_responses.map((r, i) => (
-                      <Text key={i} style={styles.responseWord}>
-                        <Text style={styles.responseHandle}>@{r.piers_users?.handle} </Text>
-                        {r.word}
-                      </Text>
-                    ))}
-                  </View>
-                )}
-              </View>
+        {tab === 'pier' && (
+          <>
+            {pierMembers.length === 0 ? (
+              <Text style={styles.empty}>Your pier is empty. Others will find your goal when they're looking for someone to support.</Text>
             ) : (
-              <View style={styles.pulseOptions}>
-                {PULSE_OPTIONS.map((opt) => (
+              pierMembers.map((m) => (
+                <View key={m.id} style={styles.memberRow}>
+                  <Text style={styles.memberHandle}>@{m.piers_users?.handle}</Text>
+                  <Text style={styles.memberJoined}>Standing since {new Date(m.joined_at).toLocaleDateString()}</Text>
+                </View>
+              ))
+            )}
+
+            {pierMembers.length < 2 && (
+              <View style={styles.waitingNotice}>
+                <Text style={styles.waitingText}>
+                  Waiting for {2 - pierMembers.length} more to stand on your pier
+                </Text>
+              </View>
+            )}
+
+            {isUnderway && (
+              <TouchableOpacity
+                style={[styles.btn, sailLoading && styles.btnDisabled]}
+                onPress={confirmReturn}
+                disabled={sailLoading}
+              >
+                {sailLoading
+                  ? <ActivityIndicator color={colors.bg} />
+                  : <Text style={styles.btnText}>I completed my goal</Text>}
+              </TouchableOpacity>
+            )}
+
+            <Text style={styles.fine}>
+              Your pier cannot respond to your voyage until you complete it or the week expires.
+              They can send signals and respond to your daily pulse.
+            </Text>
+          </>
+        )}
+
+        {tab === 'pulse' && (
+          <>
+            {/* Send today's pulse */}
+            <View style={styles.pulseSection}>
+              <Text style={styles.pulseSectionLabel}>
+                {todaysPulse ? 'Today\'s pulse — sent' : selectedStatus ? 'Add a note' : 'How\'s today going?'}
+              </Text>
+
+              {todaysPulse ? (
+                <View style={[styles.card, styles.cardPulse]}>
+                  <Text style={styles.pulseSentLabel}>You sent</Text>
+                  <Text style={styles.pulseSentText}>{PULSE_LABELS[todaysPulse.status]}</Text>
+                  {!!todaysPulse.note && (
+                    <Text style={styles.pulseNoteText}>{todaysPulse.note}</Text>
+                  )}
+                  {todaysPulse.piers_pulse_responses?.length > 0 && (
+                    <View style={styles.responsesBlock}>
+                      <Text style={styles.responsesLabel}>From your pier</Text>
+                      {todaysPulse.piers_pulse_responses.map((r, i) => (
+                        <Text key={i} style={styles.responseWord}>
+                          <Text style={styles.responseHandle}>@{r.piers_users?.handle} </Text>
+                          {r.word}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              ) : selectedStatus ? (
+                <View style={styles.noteStep}>
+                  <View style={[styles.pulseBtn, styles.pulseBtnSelected]}>
+                    <Text style={[styles.pulseBtnText, styles.pulseBtnTextSelected]}>
+                      {PULSE_LABELS[selectedStatus]}
+                    </Text>
+                  </View>
+                  <TextInput
+                    style={styles.noteInput}
+                    placeholder="Anything to add? (optional)"
+                    placeholderTextColor={colors.textDim}
+                    value={pulseNote}
+                    onChangeText={setPulseNote}
+                    multiline
+                    maxLength={200}
+                    textAlignVertical="top"
+                    autoFocus
+                  />
+                  <View style={styles.noteFooter}>
+                    <Text style={styles.noteCount}>{pulseNote.length}/200</Text>
+                    <TouchableOpacity onPress={() => setSelectedStatus(null)}>
+                      <Text style={styles.noteChange}>← Change</Text>
+                    </TouchableOpacity>
+                  </View>
                   <TouchableOpacity
-                    key={opt.key}
-                    style={[styles.pulseBtn, sendingPulse && styles.pulseBtnDisabled]}
-                    onPress={() => handleSendPulse(opt.key)}
+                    style={[styles.sendBtn, sendingPulse && styles.btnDisabled]}
+                    onPress={() => handleSendPulse(selectedStatus, pulseNote.trim() || null)}
                     disabled={sendingPulse}
                   >
                     {sendingPulse
-                      ? <ActivityIndicator color={colors.text} size="small" />
-                      : <Text style={styles.pulseBtnText}>{opt.label}</Text>}
+                      ? <ActivityIndicator color={colors.bg} size="small" />
+                      : <Text style={styles.sendBtnText}>Send pulse</Text>}
                   </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
+                </View>
+              ) : (
+                <View style={styles.pulseOptions}>
+                  {PULSE_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.key}
+                      style={styles.pulseBtn}
+                      onPress={() => setSelectedStatus(opt.key)}
+                    >
+                      <Text style={styles.pulseBtnText}>{opt.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
 
-          {/* Pulse history */}
-          {loadingPulses ? (
-            <ActivityIndicator color={colors.gold} />
-          ) : pulses.filter((p) => p.date_key !== todayKey()).length > 0 && (
-            <>
-              <Text style={styles.pulseSectionLabel}>Earlier this week</Text>
-              {pulses
-                .filter((p) => p.date_key !== todayKey())
-                .map((p) => (
-                  <View key={p.id} style={[styles.card, styles.cardHistory]}>
-                    <View style={styles.historyRow}>
-                      <Text style={styles.historyDate}>{formatDate(p.date_key)}</Text>
-                      <Text style={styles.historyStatus}>{PULSE_LABELS[p.status]}</Text>
-                    </View>
-                    {p.piers_pulse_responses?.length > 0 && (
-                      <View style={styles.responsesBlock}>
-                        {p.piers_pulse_responses.map((r, i) => (
-                          <Text key={i} style={styles.responseWord}>
-                            <Text style={styles.responseHandle}>@{r.piers_users?.handle} </Text>
-                            {r.word}
-                          </Text>
-                        ))}
+            {/* Pulse history */}
+            {loadingPulses ? (
+              <ActivityIndicator color={colors.gold} />
+            ) : pulses.filter((p) => p.date_key !== todayKey()).length > 0 && (
+              <>
+                <Text style={styles.pulseSectionLabel}>Earlier this week</Text>
+                {pulses
+                  .filter((p) => p.date_key !== todayKey())
+                  .map((p) => (
+                    <View key={p.id} style={[styles.card, styles.cardHistory]}>
+                      <View style={styles.historyRow}>
+                        <Text style={styles.historyDate}>{formatDate(p.date_key)}</Text>
+                        <Text style={styles.historyStatus}>{PULSE_LABELS[p.status]}</Text>
                       </View>
-                    )}
-                  </View>
-                ))}
-            </>
-          )}
+                      {!!p.note && (
+                        <Text style={styles.historyNote}>{p.note}</Text>
+                      )}
+                      {p.piers_pulse_responses?.length > 0 && (
+                        <View style={styles.responsesBlock}>
+                          {p.piers_pulse_responses.map((r, i) => (
+                            <Text key={i} style={styles.responseWord}>
+                              <Text style={styles.responseHandle}>@{r.piers_users?.handle} </Text>
+                              {r.word}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  ))}
+              </>
+            )}
 
-          {!loadingPulses && pulses.length === 0 && (
-            <Text style={styles.empty}>
-              No pulses yet. Send one each day to let your pier know how it's going.
-            </Text>
-          )}
-        </>
-      )}
-    </ScrollView>
+            {!loadingPulses && pulses.length === 0 && (
+              <Text style={styles.empty}>
+                No pulses yet. Send one each day to let your pier know how it's going.
+              </Text>
+            )}
+          </>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -291,10 +335,12 @@ const styles = StyleSheet.create({
   pulseSectionLabel: { fontFamily: fonts.semiBold, fontSize: 11, color: colors.textMid, textTransform: 'uppercase', letterSpacing: 0.8 },
   pulseOptions: { gap: 10 },
   pulseBtn: { backgroundColor: colors.bgCard, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: 16, paddingHorizontal: 20, alignItems: 'flex-start' },
-  pulseBtnDisabled: { opacity: 0.5 },
+  pulseBtnSelected: { borderColor: colors.goldBorder, backgroundColor: colors.goldBg },
   pulseBtnText: { fontFamily: fonts.regular, fontSize: 16, color: colors.text },
+  pulseBtnTextSelected: { fontFamily: fonts.semiBold, color: colors.gold },
   pulseSentLabel: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.gold, textTransform: 'uppercase', letterSpacing: 0.8 },
   pulseSentText: { fontFamily: fonts.regular, fontSize: 17, color: colors.text },
+  pulseNoteText: { fontFamily: fonts.italic, fontSize: 14, color: colors.textMid, lineHeight: 20 },
   responsesBlock: { gap: 6, marginTop: 4 },
   responsesLabel: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.textDim, textTransform: 'uppercase', letterSpacing: 0.8 },
   responseWord: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMid, lineHeight: 20 },
@@ -302,4 +348,18 @@ const styles = StyleSheet.create({
   historyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   historyDate: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim, flexShrink: 0 },
   historyStatus: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMid, flex: 1, textAlign: 'right' },
+  historyNote: { fontFamily: fonts.italic, fontSize: 13, color: colors.textMid, lineHeight: 18 },
+
+  noteStep: { gap: 10 },
+  noteInput: {
+    backgroundColor: colors.bgCard, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.border, padding: 14,
+    fontFamily: fonts.regular, fontSize: 15, color: colors.text,
+    minHeight: 80, lineHeight: 22,
+  },
+  noteFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  noteCount: { fontFamily: fonts.regular, fontSize: 11, color: colors.textDim },
+  noteChange: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid },
+  sendBtn: { backgroundColor: colors.blue, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center' },
+  sendBtnText: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.bg },
 });

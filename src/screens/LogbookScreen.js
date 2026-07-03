@@ -42,16 +42,11 @@ export default function LogbookScreen({ user }) {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try {
-      setEntries(await getLogbook(user.id));
-    } catch (e) {
-      console.error(e);
-    }
+    try { setEntries(await getLogbook(user.id)); }
+    catch (e) { console.error(e); }
   }, [user.id]);
 
-  useEffect(() => {
-    load().finally(() => setLoading(false));
-  }, [load]);
+  useEffect(() => { load().finally(() => setLoading(false)); }, [load]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -64,139 +59,166 @@ export default function LogbookScreen({ user }) {
   const rate = entries.length > 0 ? Math.round((returned.length / entries.length) * 100) : null;
 
   if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.gold} />
-      </View>
-    );
+    return <View style={s.center}><ActivityIndicator color={colors.gold} /></View>;
   }
 
   return (
     <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
+      style={s.container}
+      contentContainerStyle={s.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
     >
-      <Text style={styles.title}>Logbook</Text>
-      <Text style={styles.sub}>Your record on the water.</Text>
+      <View style={s.heading}>
+        <Text style={s.title}>Logbook</Text>
+        <Text style={s.sub}>Your record on the water.</Text>
+      </View>
 
       {rate !== null && (
-        <View style={styles.statsRow}>
-          <View style={styles.stat}>
-            <Text style={styles.statNum}>{entries.length}</Text>
-            <Text style={styles.statLabel}>Voyages</Text>
+        <View style={s.statsCard}>
+          <View style={s.stat}>
+            <Text style={s.statNum}>{entries.length}</Text>
+            <Text style={s.statLabel}>Voyages</Text>
           </View>
-          <View style={styles.stat}>
-            <Text style={[styles.statNum, { color: colors.gold }]}>{returned.length}</Text>
-            <Text style={styles.statLabel}>Returned</Text>
+          <View style={s.statDivider} />
+          <View style={s.stat}>
+            <Text style={[s.statNum, { color: colors.gold }]}>{returned.length}</Text>
+            <Text style={s.statLabel}>Returned</Text>
           </View>
-          <View style={styles.stat}>
-            <Text style={[styles.statNum, { color: colors.rose }]}>{lost.length}</Text>
-            <Text style={styles.statLabel}>Lost</Text>
+          <View style={s.statDivider} />
+          <View style={s.stat}>
+            <Text style={[s.statNum, { color: colors.rose }]}>{lost.length}</Text>
+            <Text style={s.statLabel}>Lost</Text>
           </View>
-          <View style={styles.stat}>
-            <Text style={styles.statNum}>{rate}%</Text>
-            <Text style={styles.statLabel}>Rate</Text>
+          <View style={s.statDivider} />
+          <View style={s.stat}>
+            <Text style={s.statNum}>{rate}%</Text>
+            <Text style={s.statLabel}>Rate</Text>
           </View>
         </View>
       )}
 
       {entries.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyText}>Your logbook is empty. Cast off to begin your record.</Text>
+        <View style={s.empty}>
+          <Text style={s.emptyText}>Your logbook is empty.{'\n'}Cast off to begin your record.</Text>
         </View>
       ) : (
-        entries.map((v) => (
-          <View key={v.id} style={[styles.card, v.status === 'returned' ? styles.cardReturned : styles.cardLost]}>
-            <View style={styles.row}>
-              <Text style={v.status === 'returned' ? styles.statusReturned : styles.statusLost}>
-                {v.status === 'returned' ? '⚓  Returned' : '🌊  Lost'}
-              </Text>
-              <Text style={styles.date}>{formatDate(v.created_at)}</Text>
-            </View>
+        <View style={s.list}>
+          {entries.map((v, idx) => {
+            const isReturned = v.status === 'returned';
+            const accentColor = isReturned ? colors.gold : colors.rose;
+            return (
+              <View
+                key={v.id}
+                style={[s.card, idx < entries.length - 1 && s.cardBorder]}
+              >
+                <View style={[s.accentBar, { backgroundColor: accentColor }]} />
+                <View style={s.cardBody}>
+                  <View style={s.cardTop}>
+                    <View style={[s.statusChip, { borderColor: accentColor + '55' }]}>
+                      <Text style={[s.statusChipText, { color: accentColor }]}>
+                        {isReturned ? 'Returned' : 'Lost'}
+                      </Text>
+                    </View>
+                    <Text style={s.date}>{formatDate(v.created_at)}</Text>
+                  </View>
 
-            <Text style={styles.goal}>{v.goal}</Text>
+                  <Text style={s.goal}>{v.goal}</Text>
 
-            <View style={styles.obstacleRow}>
-              <Text style={styles.obstacleLabel}>Obstacle named: </Text>
-              <Text style={styles.obstacle}>{v.obstacle}</Text>
-            </View>
+                  <View style={s.obstacleRow}>
+                    <Text style={s.obstacleLabel}>Obstacle: </Text>
+                    <Text style={s.obstacle}>{v.obstacle}</Text>
+                  </View>
 
-            {!!v.reckoning && (
-              <View style={styles.reckoningBlock}>
-                <Text style={styles.reckoningLabel}>Your reckoning</Text>
-                <Text style={styles.reckoningText}>"{v.reckoning}"</Text>
+                  {!!v.reckoning && (
+                    <View style={s.reckoningBlock}>
+                      <View style={[s.reckoningBar, { backgroundColor: accentColor + '55' }]} />
+                      <View style={s.reckoningContent}>
+                        <Text style={[s.reckoningLabel, { color: accentColor }]}>Your reckoning</Text>
+                        <Text style={s.reckoningText}>"{v.reckoning}"</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {v.acknowledgements.length > 0 && (
+                    <View style={s.acksBlock}>
+                      <Text style={s.acksLabel}>From the pier</Text>
+                      {v.acknowledgements.map((a, i) => (
+                        <Text key={i} style={s.ack}>
+                          <Text style={s.ackHandle}>@{a.piers_users?.handle} </Text>
+                          {a.acknowledgement}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                </View>
               </View>
-            )}
-
-            {v.acknowledgements.length > 0 && (
-              <View style={styles.acksBlock}>
-                <Text style={styles.acksLabel}>From the pier</Text>
-                {v.acknowledgements.map((a, i) => (
-                  <Text key={i} style={styles.ack}>
-                    <Text style={styles.ackHandle}>@{a.piers_users?.handle}: </Text>
-                    {a.acknowledgement}
-                  </Text>
-                ))}
-              </View>
-            )}
-          </View>
-        ))
+            );
+          })}
+        </View>
       )}
     </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 20, paddingTop: 60, gap: 14, paddingBottom: 40 },
+  content: { padding: 22, paddingTop: 64, gap: 24, paddingBottom: 48 },
   center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 28, fontWeight: '700', color: colors.text, letterSpacing: -0.5 },
-  sub: { fontSize: 14, color: colors.textMid, marginTop: -6 },
-  statsRow: {
+
+  heading: { gap: 6 },
+  title: { fontFamily: fonts.bold, fontSize: 32, color: colors.text, letterSpacing: -0.5 },
+  sub: { fontFamily: fonts.light, fontSize: 14, color: colors.textMid },
+
+  statsCard: {
     flexDirection: 'row',
     backgroundColor: colors.bgCard,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
-    justifyContent: 'space-around',
+    borderWidth: 1, borderColor: colors.borderStrong,
+    paddingVertical: 18, paddingHorizontal: 8,
+    alignItems: 'center',
   },
-  stat: { alignItems: 'center', gap: 2 },
-  statNum: { fontSize: 22, fontWeight: '700', color: colors.text },
-  statLabel: { fontSize: 11, color: colors.textDim, textTransform: 'uppercase', letterSpacing: 0.5 },
+  stat: { flex: 1, alignItems: 'center', gap: 4 },
+  statNum: { fontFamily: fonts.bold, fontSize: 24, color: colors.text },
+  statLabel: { fontFamily: fonts.regular, fontSize: 10, color: colors.textDim, textTransform: 'uppercase', letterSpacing: 0.6 },
+  statDivider: { width: 1, height: 32, backgroundColor: colors.border },
+
+  list: {
+    borderWidth: 1, borderColor: colors.borderStrong,
+    borderRadius: radius.md, backgroundColor: colors.bgCard,
+    overflow: 'hidden',
+  },
   card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 18,
-    gap: 10,
+    flexDirection: 'row',
   },
-  cardReturned: { borderColor: colors.goldBorder },
-  cardLost: { borderColor: colors.roseBorder },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  statusReturned: { fontSize: 11, color: colors.gold },
-  statusLost: { fontSize: 11, color: colors.rose },
-  date: { fontSize: 11, color: colors.textDim },
-  goal: { fontSize: 16, color: colors.text, lineHeight: 22 },
-  obstacleRow: { flexDirection: 'row', flexWrap: 'wrap' },
-  obstacleLabel: { fontSize: 12, color: colors.textDim },
-  obstacle: { fontSize: 12, color: colors.textMid, flex: 1 },
-  reckoningBlock: {
-    backgroundColor: colors.goldBg,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.goldBorder,
-    padding: 12,
-    gap: 4,
+  cardBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  accentBar: { width: 3 },
+  cardBody: { flex: 1, padding: 20, gap: 12 },
+
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  statusChip: {
+    borderWidth: 1, borderRadius: 99,
+    paddingHorizontal: 9, paddingVertical: 3,
   },
-  reckoningLabel: { fontSize: 10, color: colors.gold, textTransform: 'uppercase', letterSpacing: 0.8 },
-  reckoningText: { fontSize: 13, color: colors.text, lineHeight: 18, fontStyle: 'italic' },
+  statusChipText: { fontFamily: fonts.semiBold, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 },
+  date: { fontFamily: fonts.regular, fontSize: 11, color: colors.textDim },
+
+  goal: { fontFamily: fonts.regular, fontSize: 17, color: colors.text, lineHeight: 24 },
+
+  obstacleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
+  obstacleLabel: { fontFamily: fonts.semiBold, fontSize: 12, color: colors.textDim },
+  obstacle: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMid, flex: 1 },
+
+  reckoningBlock: { flexDirection: 'row', gap: 12 },
+  reckoningBar: { width: 2, borderRadius: 1, alignSelf: 'stretch' },
+  reckoningContent: { flex: 1, gap: 5 },
+  reckoningLabel: { fontFamily: fonts.semiBold, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.9 },
+  reckoningText: { fontFamily: fonts.italic, fontSize: 14, color: colors.text, lineHeight: 22 },
+
   acksBlock: { gap: 6 },
-  acksLabel: { fontSize: 10, color: colors.textDim, textTransform: 'uppercase', letterSpacing: 0.8 },
-  ack: { fontSize: 13, color: colors.textMid, lineHeight: 18 },
-  ackHandle: { color: colors.blue, fontWeight: '600' },
-  empty: { paddingVertical: 40, alignItems: 'center' },
-  emptyText: { fontSize: 14, color: colors.textDim, textAlign: 'center', lineHeight: 20 },
+  acksLabel: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.textDim, textTransform: 'uppercase', letterSpacing: 0.8 },
+  ack: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid, lineHeight: 20 },
+  ackHandle: { fontFamily: fonts.semiBold, color: colors.blue },
+
+  empty: { paddingVertical: 60, alignItems: 'center' },
+  emptyText: { fontFamily: fonts.light, fontSize: 16, color: colors.textDim, textAlign: 'center', lineHeight: 26 },
 });

@@ -1,9 +1,11 @@
 import React from 'react';
-import { View, Text, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, Image, ActivityIndicator, Dimensions } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { StatusBar } from 'expo-status-bar';
+
+const SPLASH_IMAGE = require('./assets/splash-pier.png');
 import {
   useFonts,
   Raleway_300Light,
@@ -16,7 +18,6 @@ import {
 
 import { useUser } from './src/hooks/useUser';
 import { colors, fonts } from './src/lib/theme';
-import PierIllustration from './src/components/PierIllustration';
 
 import OnboardingFlow from './src/screens/OnboardingFlow';
 import HomeScreen from './src/screens/HomeScreen';
@@ -95,17 +96,21 @@ function Tabs({ user }) {
 function SplashScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-      <PierIllustration width={W} height={W * 1.1} />
-      <View style={{ position: 'absolute', bottom: 70, alignItems: 'center', gap: 6 }}>
+      <Image
+        source={SPLASH_IMAGE}
+        style={{ width: W, height: W * 1.05 }}
+        resizeMode="contain"
+      />
+      <View style={{ position: 'absolute', bottom: 70, alignItems: 'center', gap: 10 }}>
         <Text style={{
-          fontSize: 38,
-          fontWeight: '300',
-          color: colors.gold,
-          letterSpacing: 12,
+          fontFamily: fonts.bold,
+          fontSize: 36,
+          color: colors.text,
+          letterSpacing: 10,
         }}>
           piers
         </Text>
-        <ActivityIndicator color={colors.gold} style={{ opacity: 0.4 }} />
+        <ActivityIndicator color={colors.textDim} style={{ opacity: 0.5 }} />
       </View>
     </View>
   );
@@ -126,7 +131,7 @@ export default function App() {
   if (!fontsLoaded || loading) {
     return (
       <>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <SplashScreen />
       </>
     );
@@ -135,7 +140,7 @@ export default function App() {
   if (!user) {
     return (
       <>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <OnboardingFlow onCreated={createUser} />
       </>
     );

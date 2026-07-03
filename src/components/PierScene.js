@@ -4,9 +4,9 @@ import Svg, {
   Path, Line, Ellipse, G, Defs, RadialGradient, Stop, Rect, Text as SvgText,
 } from 'react-native-svg';
 
-const ink = 'rgba(240,237,230,0.82)';
-const inkFaint = 'rgba(240,237,230,0.18)';
-const inkMid = 'rgba(240,237,230,0.42)';
+const ink = 'rgba(26,23,20,0.72)';
+const inkFaint = 'rgba(26,23,20,0.18)';
+const inkMid = 'rgba(26,23,20,0.40)';
 
 export default function PierScene({ width, height = 190, handle = '' }) {
   const W = width ?? Dimensions.get('window').width;
@@ -73,8 +73,8 @@ export default function PierScene({ width, height = 190, handle = '' }) {
     <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
       <Defs>
         <RadialGradient id="pglow" cx="50%" cy="22%" r="45%">
-          <Stop offset="0%" stopColor="rgba(126,184,247,0.12)" />
-          <Stop offset="100%" stopColor="rgba(9,9,15,0)" />
+          <Stop offset="0%" stopColor="rgba(74,141,181,0.07)" />
+          <Stop offset="100%" stopColor="rgba(240,237,230,0)" />
         </RadialGradient>
       </Defs>
 
@@ -173,7 +173,7 @@ export default function PierScene({ width, height = 190, handle = '' }) {
           x={W * 0.5} y={figHeadY - 9}
           textAnchor="middle"
           fontSize={9} fontWeight="600"
-          fill="rgba(126,184,247,0.9)"
+          fill="rgba(29,58,99,0.82)"
         >
           @{handle}
         </SvgText>

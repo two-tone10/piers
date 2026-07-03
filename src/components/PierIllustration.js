@@ -1,10 +1,10 @@
 import React from 'react';
 import Svg, { Path, Line, Ellipse, G, Defs, RadialGradient, Stop, Rect } from 'react-native-svg';
 
-const ink = 'rgba(240,237,230,0.82)';
-const inkFaint = 'rgba(240,237,230,0.22)';
-const inkMid = 'rgba(240,237,230,0.45)';
-const inkStrong = 'rgba(240,237,230,0.92)';
+const ink = 'rgba(26,23,20,0.72)';
+const inkFaint = 'rgba(26,23,20,0.18)';
+const inkMid = 'rgba(26,23,20,0.40)';
+const inkStrong = 'rgba(26,23,20,0.88)';
 
 export default function PierIllustration({ width = 340, height = 420 }) {
   const W = width;
@@ -118,8 +118,8 @@ export default function PierIllustration({ width = 340, height = 420 }) {
     <Svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
       <Defs>
         <RadialGradient id="glow" cx="50%" cy="38%" r="40%">
-          <Stop offset="0%" stopColor="rgba(232,201,122,0.06)" />
-          <Stop offset="100%" stopColor="rgba(9,9,15,0)" />
+          <Stop offset="0%" stopColor="rgba(122,82,48,0.04)" />
+          <Stop offset="100%" stopColor="rgba(240,237,230,0)" />
         </RadialGradient>
       </Defs>
 

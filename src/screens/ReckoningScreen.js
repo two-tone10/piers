@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { colors, radius } from '../lib/theme';
+import { colors, radius, fonts } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 
 export default function ReckoningScreen({ route, navigation }) {
@@ -27,41 +27,44 @@ export default function ReckoningScreen({ route, navigation }) {
     }
   }
 
-  function skip() {
-    navigation.goBack();
-  }
-
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={s.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>
-          {returned ? 'You made it back.' : 'The week expired.'}
-        </Text>
-        <Text style={styles.sub}>
-          {returned
-            ? 'Before this voyage archives, write your reckoning. What happened?'
-            : 'The week is up. Write what you know now that you didn\'t when you cast off.'}
-        </Text>
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
 
-        <View style={[styles.card, styles.cardGold]}>
-          <Text style={styles.fieldLabel}>Your goal was</Text>
-          <Text style={styles.goalText}>{voyage.goal}</Text>
+        <View style={s.heading}>
+          <Text style={s.title}>
+            {returned ? 'You made it back.' : 'The week expired.'}
+          </Text>
+          <Text style={s.sub}>
+            {returned
+              ? 'Before this voyage closes, write your reckoning. What happened out there?'
+              : 'The week is up. Write what you know now that you didn\'t when you cast off.'}
+          </Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.fieldLabel}>You named this as your obstacle</Text>
-          <Text style={styles.obstacleText}>{voyage.obstacle}</Text>
+        <View style={s.rule} />
+
+        <View style={[s.referenceCard, s.referenceGold]}>
+          <Text style={s.referenceLabel}>Your goal was</Text>
+          <Text style={s.referenceText}>{voyage.goal}</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.fieldLabel}>Your reckoning</Text>
+        <View style={s.referenceCard}>
+          <Text style={s.referenceLabel}>You named this obstacle</Text>
+          <Text style={s.referenceTextDim}>{voyage.obstacle}</Text>
+        </View>
+
+        <View style={s.rule} />
+
+        <View style={s.inputCard}>
+          <Text style={s.inputLabel}>Your reckoning</Text>
           <TextInput
-            style={styles.input}
+            style={s.input}
             placeholder={returned
-              ? 'What happened? Was the obstacle what you thought?'
+              ? 'What happened? Was the obstacle what you thought it would be?'
               : 'What got in the way? What do you know now?'}
             placeholderTextColor={colors.textDim}
             value={reckoning}
@@ -71,56 +74,76 @@ export default function ReckoningScreen({ route, navigation }) {
             textAlignVertical="top"
             autoFocus
           />
-          <Text style={styles.count}>{reckoning.length}/400</Text>
+          <Text style={s.count}>{reckoning.length}/400</Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.btn, loading && styles.btnDisabled]}
+          style={[s.btn, loading && s.btnDisabled]}
           onPress={submit}
           disabled={loading}
         >
           {loading
             ? <ActivityIndicator color={colors.bg} />
-            : <Text style={styles.btnText}>
-                {returned ? 'Archive the voyage ⚓' : 'Close the logbook 🌊'}
+            : <Text style={s.btnText}>
+                {returned ? 'Archive the voyage' : 'Close the logbook'}
               </Text>}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.skip} onPress={skip}>
-          <Text style={styles.skipText}>Skip reckoning</Text>
+        <TouchableOpacity style={s.skip} onPress={() => navigation.goBack()}>
+          <Text style={s.skipText}>Skip reckoning</Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 24, paddingTop: 60, gap: 18, paddingBottom: 40 },
-  title: { fontSize: 28, fontWeight: '700', color: colors.text, letterSpacing: -0.5 },
-  sub: { fontSize: 14, color: colors.textMid, lineHeight: 20 },
-  card: {
+  content: { padding: 26, paddingTop: 64, gap: 22, paddingBottom: 48 },
+
+  heading: { gap: 10 },
+  title: { fontFamily: fonts.boldItalic, fontSize: 34, color: colors.text, letterSpacing: -0.5 },
+  sub: { fontFamily: fonts.light, fontSize: 15, color: colors.textMid, lineHeight: 23 },
+
+  rule: { height: 1, backgroundColor: colors.border },
+
+  referenceCard: {
     backgroundColor: colors.bgCard,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 18,
-    gap: 8,
+    borderWidth: 1, borderColor: colors.borderStrong,
+    padding: 18, gap: 8,
   },
-  cardGold: { borderColor: colors.goldBorder, backgroundColor: colors.goldBg },
-  fieldLabel: { fontSize: 11, color: colors.textMid, textTransform: 'uppercase', letterSpacing: 0.8 },
-  goalText: { fontSize: 17, color: colors.text, lineHeight: 24 },
-  obstacleText: { fontSize: 14, color: colors.textMid, lineHeight: 20 },
+  referenceGold: { borderColor: colors.goldBorder, backgroundColor: colors.goldBg },
+  referenceLabel: {
+    fontFamily: fonts.semiBold, fontSize: 10, color: colors.textDim,
+    textTransform: 'uppercase', letterSpacing: 0.9,
+  },
+  referenceText: { fontFamily: fonts.regular, fontSize: 17, color: colors.text, lineHeight: 25 },
+  referenceTextDim: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMid, lineHeight: 22 },
+
+  inputCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.borderStrong,
+    padding: 20, gap: 12,
+  },
+  inputLabel: {
+    fontFamily: fonts.semiBold, fontSize: 11, color: colors.gold,
+    textTransform: 'uppercase', letterSpacing: 1,
+  },
   input: {
-    fontSize: 15, color: colors.text, minHeight: 100, lineHeight: 22,
+    fontFamily: fonts.regular, fontSize: 16, color: colors.text,
+    minHeight: 110, lineHeight: 25,
   },
-  count: { fontSize: 11, color: colors.textDim, textAlign: 'right' },
+  count: { fontFamily: fonts.regular, fontSize: 11, color: colors.textDim, textAlign: 'right' },
+
   btn: {
     backgroundColor: colors.gold, borderRadius: radius.md,
-    paddingVertical: 16, alignItems: 'center',
+    paddingVertical: 18, alignItems: 'center',
   },
   btnDisabled: { opacity: 0.5 },
-  btnText: { fontSize: 16, fontWeight: '600', color: colors.bg },
-  skip: { alignItems: 'center', paddingVertical: 8 },
-  skipText: { fontSize: 13, color: colors.textDim },
+  btnText: { fontFamily: fonts.semiBold, fontSize: 16, color: colors.bg },
+
+  skip: { alignItems: 'center', paddingVertical: 4 },
+  skipText: { fontFamily: fonts.regular, fontSize: 13, color: colors.textDim },
 });

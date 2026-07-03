@@ -166,11 +166,11 @@ export async function sendSignal({ voyageId, senderId, quote, author }) {
 
 // ── Pulses ────────────────────────────────────────────────────────────────────
 
-export async function sendPulse({ voyageId, status }) {
+export async function sendPulse({ voyageId, status, note }) {
   const { error } = await supabase
     .from('piers_pulses')
     .upsert(
-      { voyage_id: voyageId, status, date_key: todayKey() },
+      { voyage_id: voyageId, status, note: note || null, date_key: todayKey() },
       { onConflict: 'voyage_id,date_key' }
     );
   if (error) throw error;

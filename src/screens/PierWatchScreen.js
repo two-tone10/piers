@@ -275,6 +275,9 @@ export default function PierWatchScreen({ route, navigation, user }) {
                       {isToday && <Text style={st.pulseTodayBadge}>Latest</Text>}
                     </View>
                     <Text style={st.pulseStatus}>{PULSE_LABELS[p.status]}</Text>
+                    {!!p.note && (
+                      <Text style={st.pulseNote}>{p.note}</Text>
+                    )}
 
                     {myWord ? (
                       <View style={st.myResponse}>
@@ -443,6 +446,7 @@ const st = StyleSheet.create({
   pulseDate: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
   pulseTodayBadge: { fontFamily: fonts.semiBold, fontSize: 9, color: colors.gold, textTransform: 'uppercase', letterSpacing: 0.8 },
   pulseStatus: { fontFamily: fonts.regular, fontSize: 18, color: colors.text },
+  pulseNote: { fontFamily: fonts.italic, fontSize: 14, color: colors.textMid, lineHeight: 20, marginTop: -4 },
   wordPickerLabel: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.textDim, textTransform: 'uppercase', letterSpacing: 0.8 },
   wordGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   wordBtn: {

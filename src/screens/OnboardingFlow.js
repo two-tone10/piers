@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, Image, TextInput, TouchableOpacity, StyleSheet,
   Dimensions, ScrollView, KeyboardAvoidingView, Platform,
   ActivityIndicator, Animated,
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
-import PierIllustration from '../components/PierIllustration';
+
+const SPLASH_IMAGE = require('../../assets/splash-pier.png');
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -32,9 +33,11 @@ function Dots({ total, current }) {
 function SplashStep({ onNext }) {
   return (
     <TouchableOpacity style={s.splash} activeOpacity={0.9} onPress={onNext}>
-      <View style={s.illustrationWrap}>
-        <PierIllustration width={W * 0.9} height={H * 0.52} />
-      </View>
+      <Image
+        source={SPLASH_IMAGE}
+        style={s.splashImage}
+        resizeMode="contain"
+      />
       <View style={s.splashBottom}>
         <Text style={s.splashWordmark}>piers</Text>
         <Text style={s.splashHint}>tap to continue</Text>
@@ -279,8 +282,8 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
 
   // Splash
-  splash: { flex: 1, alignItems: 'center', justifyContent: 'space-between', paddingTop: 60, paddingBottom: 50 },
-  illustrationWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  splash: { flex: 1, alignItems: 'center', justifyContent: 'space-between', paddingTop: 40, paddingBottom: 50 },
+  splashImage: { width: W, height: W * 1.0, marginTop: 20 },
   splashBottom: { alignItems: 'center', gap: 12 },
   splashWordmark: { fontFamily: fonts.bold, fontSize: 48, color: colors.gold, letterSpacing: 4 },
   splashHint: { fontFamily: fonts.light, fontSize: 12, color: colors.textDim, letterSpacing: 1.5, textTransform: 'uppercase' },

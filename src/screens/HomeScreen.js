@@ -1,13 +1,28 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, ActivityIndicator, Alert, Modal,
+  RefreshControl, ActivityIndicator, Alert, Modal, Image,
+  Dimensions,
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
 import {
   getMyVoyage, getOpenVoyages, getPierMembers,
   getActiveMemberships, seedOpenVoyages, seedPierMembers,
 } from '../lib/supabase';
+
+const IMAGES = {
+  splash: require('../../assets/splash-pier.png'),
+  solo:   require('../../assets/solo.png'),
+  duo:    require('../../assets/duo.png'),
+};
+
+function pierImage(memberCount) {
+  if (memberCount >= 2) return IMAGES.duo;
+  if (memberCount === 1) return IMAGES.solo;
+  return IMAGES.splash;
+}
+
+const SCREEN_W = Dimensions.get('window').width;
 
 function timeLeft(expiresAt) {
   const diff = new Date(expiresAt) - Date.now();
@@ -27,6 +42,14 @@ function PierDots({ filled, total = 2 }) {
       <Text style={s.dotsLabel}>
         {filled >= total ? 'Pier full' : `${total - filled} spot${total - filled > 1 ? 's' : ''} open`}
       </Text>
+    </View>
+  );
+}
+
+function StatusPill({ label, color }) {
+  return (
+    <View style={[s.pill, { borderColor: color + '55' }]}>
+      <Text style={[s.pillText, { color }]}>{label}</Text>
     </View>
   );
 }
@@ -83,8 +106,8 @@ export default function HomeScreen({ user, navigation }) {
 
   const needsReckoning = myVoyage && ['returned', 'lost'].includes(myVoyage.status) && !myVoyage.reckoning_at;
   const hasActiveGoal = myVoyage && ['open', 'underway'].includes(myVoyage.status);
-  const canJoinMore = memberships.length < 3;
   const isUnderway = myVoyage?.status === 'underway';
+  const canJoinMore = memberships.length < 3;
 
   return (
     <>
@@ -93,136 +116,171 @@ export default function HomeScreen({ user, navigation }) {
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
       >
-        {/* Header */}
+        {/* ── HEADER ── */}
         <View style={s.header}>
-          <View>
-            <Text style={s.wordmark}>Piers</Text>
+          <Text style={s.wordmark}>Piers</Text>
+          <View style={s.headerRight}>
             <Text style={s.handle}>@{user.handle}</Text>
+            <TouchableOpacity style={s.devBtn} onPress={() => setDevVisible(true)}>
+              <Text style={s.devBtnText}>Dev</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={s.devBtn} onPress={() => setDevVisible(true)}>
-            <Text style={s.devBtnText}>Dev</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Reckoning prompt */}
+        {/* ── RECKONING BANNER ── */}
         {needsReckoning && (
           <TouchableOpacity
-            style={s.reckoningCard}
+            style={s.reckoningBanner}
             onPress={() => navigation.navigate('Reckoning', { voyage: myVoyage })}
+            activeOpacity={0.8}
           >
-            <Text style={s.reckoningLabel}>
-              {myVoyage.status === 'returned' ? 'You completed your goal' : 'The week has passed'}
-            </Text>
-            <Text style={s.reckoningGoal} numberOfLines={2}>{myVoyage.goal}</Text>
-            <Text style={s.reckoningCta}>Write your reckoning →</Text>
+            <View style={s.reckoningDot} />
+            <View style={s.reckoningBody}>
+              <Text style={s.reckoningEyebrow}>
+                {myVoyage.status === 'returned' ? 'You completed your goal' : 'The week has passed'}
+              </Text>
+              <Text style={s.reckoningGoal} numberOfLines={1}>{myVoyage.goal}</Text>
+            </View>
+            <Text style={s.reckoningArrow}>→</Text>
           </TouchableOpacity>
         )}
 
-        {/* ── YOUR GOAL ── */}
-        <View style={s.section}>
-          <Text style={s.sectionLabel}>Your goal</Text>
-          {hasActiveGoal ? (
-            <TouchableOpacity
-              style={[s.goalCard, isUnderway && s.goalCardUnderway]}
-              onPress={() => navigation.navigate('MyVoyage', { voyage: myVoyage, pierMembers })}
-              activeOpacity={0.8}
-            >
-              <View style={s.goalCardTop}>
-                <Text style={s.goalStatusChip}>
-                  {myVoyage.status === 'open' ? 'Seeking support' : 'Underway'}
-                </Text>
-                <Text style={s.goalTimeLeft}>{timeLeft(myVoyage.expires_at)}</Text>
+        {/* ── HERO CARD ── */}
+        {hasActiveGoal ? (
+          <TouchableOpacity
+            style={s.heroCard}
+            onPress={() => navigation.navigate('MyVoyage', { voyage: myVoyage, pierMembers })}
+            activeOpacity={0.88}
+          >
+            <Image source={pierImage(pierMembers.length)} style={s.heroImage} resizeMode="cover" />
+            <View style={s.heroFade} />
+            <View style={s.heroContent}>
+              {(() => {
+                const elapsed = Math.min(1, Math.max(0,
+                  (Date.now() - new Date(myVoyage.created_at)) /
+                  (new Date(myVoyage.expires_at) - new Date(myVoyage.created_at))
+                ));
+                return (
+                  <View style={s.progressTrack}>
+                    <View style={[s.progressFill, { width: `${elapsed * 100}%` }]} />
+                  </View>
+                );
+              })()}
+              <View style={s.heroTopRow}>
+                <StatusPill
+                  label={isUnderway ? 'Underway' : 'Seeking support'}
+                  color={isUnderway ? colors.gold : colors.blue}
+                />
+                <Text style={s.heroTimer}>{timeLeft(myVoyage.expires_at)}</Text>
               </View>
-              <Text style={s.goalText}>{myVoyage.goal}</Text>
-              <View style={s.goalCardBottom}>
+              <Text style={s.heroGoal}>{myVoyage.goal}</Text>
+              <View style={s.heroBottom}>
                 <PierDots filled={pierMembers.length} />
-                <Text style={s.goalViewCta}>View →</Text>
+                <Text style={s.heroViewCta}>View pier →</Text>
               </View>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={s.castOffCard} onPress={() => navigation.navigate('CastOff')} activeOpacity={0.8}>
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={s.heroCard}
+            onPress={() => navigation.navigate('CastOff')}
+            activeOpacity={0.88}
+          >
+            <Image source={IMAGES.splash} style={s.heroImage} resizeMode="cover" />
+            <View style={s.heroFade} />
+            <View style={s.heroContent}>
               <Text style={s.castOffEyebrow}>This week</Text>
-              <Text style={s.castOffHeadline}>Set your goal.</Text>
+              <Text style={s.castOffHeadline}>What will you{'\n'}do?</Text>
               <Text style={s.castOffBody}>
-                Name what you will do.{'\n'}
-                Name your biggest obstacle.{'\n'}
-                Send it out. Two others will stand witness.
+                Name it precisely. Name your obstacle.{'\n'}Two strangers will stand witness.
               </Text>
               <View style={s.castOffBtn}>
                 <Text style={s.castOffBtnText}>Cast off →</Text>
               </View>
-            </TouchableOpacity>
-          )}
-        </View>
+            </View>
+          </TouchableOpacity>
+        )}
 
         {/* ── STANDING ON ── */}
         {memberships.length > 0 && (
           <View style={s.section}>
-            <Text style={s.sectionLabel}>Standing on</Text>
-            {memberships.map((m) => {
-              const v = m.piers_voyages;
-              if (!v) return null;
-              const ended = ['returned', 'lost'].includes(v.status);
-              return (
-                <TouchableOpacity
-                  key={m.id}
-                  style={s.membershipCard}
-                  onPress={() => navigation.navigate('PierWatch', { membership: m })}
-                  activeOpacity={0.8}
-                >
-                  <View style={s.membershipTop}>
-                    <Text style={s.membershipHandle}>@{v.piers_users?.handle}</Text>
-                    <Text style={[s.membershipStatus, ended && s.membershipStatusEnded]}>
-                      {v.status === 'open' ? 'Seeking support' : v.status === 'underway' ? 'Underway' : v.status === 'returned' ? 'Returned' : 'Ended'}
-                    </Text>
-                  </View>
-                  <Text style={s.membershipGoal} numberOfLines={2}>{v.goal}</Text>
-                  <Text style={s.membershipCta}>Their pier →</Text>
-                </TouchableOpacity>
-              );
-            })}
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionLabel}>You're standing on</Text>
+              <Text style={s.sectionCount}>{memberships.length} of 3</Text>
+            </View>
+            <View style={s.groupCard}>
+              {memberships.map((m, idx) => {
+                const v = m.piers_voyages;
+                if (!v) return null;
+                const ended = ['returned', 'lost'].includes(v.status);
+                const accentColor = ended ? colors.rose : v.status === 'underway' ? colors.gold : colors.blue;
+                const statusLabel = v.status === 'open' ? 'Seeking support'
+                  : v.status === 'underway' ? 'Underway'
+                  : v.status === 'returned' ? 'Returned' : 'Ended';
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[s.groupItem, idx < memberships.length - 1 && s.groupItemBorder]}
+                    onPress={() => navigation.navigate('PierWatch', { membership: m })}
+                    activeOpacity={0.75}
+                  >
+                    <View style={[s.accentBar, { backgroundColor: accentColor }]} />
+                    <View style={s.groupBody}>
+                      <View style={s.groupTop}>
+                        <Text style={[s.groupHandle, { color: accentColor }]}>@{v.piers_users?.handle}</Text>
+                        <Text style={[s.groupStatus, { color: accentColor + 'aa' }]}>{statusLabel}</Text>
+                      </View>
+                      <Text style={s.groupGoal} numberOfLines={2}>{v.goal}</Text>
+                    </View>
+                    <Text style={[s.groupArrow, { color: accentColor + '77' }]}>→</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             {canJoinMore && (
-              <View style={s.capacityRow}>
-                <Text style={s.capacityText}>{memberships.length} of 3 — room for {3 - memberships.length} more</Text>
-              </View>
+              <Text style={s.capacityNote}>
+                + {3 - memberships.length} more pier{3 - memberships.length > 1 ? 's' : ''} available
+              </Text>
             )}
           </View>
         )}
 
-        {/* ── GOALS SEEKING SUPPORT ── */}
+        {/* ── OPEN VOYAGES ── */}
         {(openVoyages.length > 0 || memberships.length === 0) && (
           <View style={s.section}>
-            <Text style={s.sectionLabel}>Goals seeking support</Text>
-            <Text style={s.sectionSub}>Two people needed for each.</Text>
-
+            <View style={s.sectionHeader}>
+              <Text style={s.sectionLabel}>Seeking support</Text>
+            </View>
             {!canJoinMore ? (
-              <View style={s.fullNotice}>
-                <Text style={s.fullNoticeText}>
-                  You're supporting three people — that's the limit.
-                  Acknowledge someone when their voyage ends to make room.
-                </Text>
-              </View>
+              <Text style={s.noticeText}>
+                You're supporting three people — the limit. Acknowledge someone when their voyage ends to open a spot.
+              </Text>
             ) : openVoyages.length === 0 ? (
-              <Text style={s.emptyText}>No goals out yet. Be the first.</Text>
+              <Text style={s.noticeText}>No goals out yet. Be the first to cast off.</Text>
             ) : (
-              openVoyages.map((v) => (
-                <TouchableOpacity
-                  key={v.id}
-                  style={s.openCard}
-                  onPress={() => navigation.navigate('JoinPier', { voyage: v })}
-                  activeOpacity={0.8}
-                >
-                  <Text style={s.openHandle}>@{v.piers_users?.handle}</Text>
-                  <Text style={s.openGoal}>{v.goal}</Text>
-                  <Text style={s.openCta}>Stand on their pier →</Text>
-                </TouchableOpacity>
-              ))
+              <View style={s.groupCard}>
+                {openVoyages.map((v, idx) => (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[s.groupItem, idx < openVoyages.length - 1 && s.groupItemBorder]}
+                    onPress={() => navigation.navigate('JoinPier', { voyage: v })}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={s.openIndex}>{String(idx + 1).padStart(2, '0')}</Text>
+                    <View style={s.groupBody}>
+                      <Text style={s.openHandle}>@{v.piers_users?.handle}</Text>
+                      <Text style={s.groupGoal} numberOfLines={2}>{v.goal}</Text>
+                    </View>
+                    <Text style={s.groupArrow}>→</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             )}
           </View>
         )}
       </ScrollView>
 
-      {/* Dev panel */}
+      {/* ── DEV PANEL ── */}
       <Modal visible={devVisible} transparent animationType="slide">
         <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setDevVisible(false)}>
           <View style={s.sheet}>
@@ -245,56 +303,75 @@ export default function HomeScreen({ user, navigation }) {
   );
 }
 
+const HERO_IMAGE_H = 220;
+const CARD_RADIUS = 20;
+
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { paddingTop: 60, paddingBottom: 48, gap: 28 },
+  content: { paddingTop: 56, paddingBottom: 52, gap: 32 },
   center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
 
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 22,
   },
-  wordmark: { fontFamily: fonts.bold, fontSize: 32, color: colors.gold, letterSpacing: 1 },
-  handle: { fontFamily: fonts.light, fontSize: 13, color: colors.textMid, marginTop: 2 },
+  wordmark: { fontFamily: fonts.bold, fontSize: 28, color: colors.gold, letterSpacing: 0.8 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  handle: { fontFamily: fonts.light, fontSize: 13, color: colors.textMid },
   devBtn: {
     backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.border,
-    borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 6, marginTop: 6,
+    borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 5,
   },
-  devBtnText: { fontFamily: fonts.semiBold, fontSize: 11, color: colors.textDim, letterSpacing: 0.5 },
+  devBtnText: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.textDim, letterSpacing: 0.5 },
 
-  reckoningCard: {
-    marginHorizontal: 22,
-    backgroundColor: colors.roseBg, borderRadius: radius.md,
+  reckoningBanner: {
+    marginHorizontal: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: colors.roseBg,
     borderWidth: 1, borderColor: colors.roseBorder,
-    padding: 20, gap: 8,
+    borderRadius: radius.md, padding: 16,
   },
-  reckoningLabel: { fontFamily: fonts.semiBold, fontSize: 11, color: colors.rose, textTransform: 'uppercase', letterSpacing: 0.8 },
-  reckoningGoal: { fontFamily: fonts.regular, fontSize: 15, color: colors.text, lineHeight: 22 },
-  reckoningCta: { fontFamily: fonts.semiBold, fontSize: 13, color: colors.rose },
+  reckoningDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.rose },
+  reckoningBody: { flex: 1, gap: 3 },
+  reckoningEyebrow: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.rose, textTransform: 'uppercase', letterSpacing: 0.8 },
+  reckoningGoal: { fontFamily: fonts.regular, fontSize: 14, color: colors.text },
+  reckoningArrow: { fontFamily: fonts.semiBold, fontSize: 16, color: colors.rose },
 
-  section: { gap: 12, paddingHorizontal: 22 },
-  sectionLabel: {
-    fontFamily: fonts.semiBold, fontSize: 11, color: colors.textDim,
-    textTransform: 'uppercase', letterSpacing: 1.2,
+  heroCard: {
+    marginHorizontal: 20,
+    backgroundColor: colors.bgCard,
+    borderRadius: CARD_RADIUS,
+    borderWidth: 1, borderColor: colors.borderStrong,
+    overflow: 'hidden',
   },
-  sectionSub: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid, marginTop: -4 },
+  heroImage: {
+    width: '100%',
+    height: HERO_IMAGE_H,
+    backgroundColor: colors.bgCard,
+  },
+  heroFade: {
+    position: 'absolute',
+    top: HERO_IMAGE_H - 70,
+    left: 0, right: 0,
+    height: 90,
+    backgroundColor: 'rgba(230,225,216,0.94)',
+  },
+  heroContent: { padding: 22, paddingTop: 16, gap: 14 },
+  progressTrack: {
+    height: 2, backgroundColor: colors.border,
+    borderRadius: 1, overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%', backgroundColor: colors.gold, borderRadius: 1,
+  },
+  heroTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  heroTimer: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
+  heroGoal: { fontFamily: fonts.regular, fontSize: 20, color: colors.text, lineHeight: 30 },
+  heroBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  heroViewCta: { fontFamily: fonts.semiBold, fontSize: 14, color: colors.gold },
 
-  // Goal card — active
-  goalCard: {
-    backgroundColor: colors.goldBg,
-    borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.goldBorder,
-    padding: 22, gap: 14,
-  },
-  goalCardUnderway: {
-    borderColor: colors.gold,
-  },
-  goalCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  goalStatusChip: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.gold, textTransform: 'uppercase', letterSpacing: 0.9 },
-  goalTimeLeft: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
-  goalText: { fontFamily: fonts.regular, fontSize: 19, color: colors.text, lineHeight: 28 },
-  goalCardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  goalViewCta: { fontFamily: fonts.semiBold, fontSize: 13, color: colors.gold },
+  pill: { borderWidth: 1, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
+  pillText: { fontFamily: fonts.semiBold, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.8 },
 
   dotsRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   dot: { width: 9, height: 9, borderRadius: 5 },
@@ -302,16 +379,9 @@ const s = StyleSheet.create({
   dotEmpty: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.gold },
   dotsLabel: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMid },
 
-  // Cast off invitation card
-  castOffCard: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    padding: 26, gap: 12,
-  },
   castOffEyebrow: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.textDim, textTransform: 'uppercase', letterSpacing: 1.2 },
-  castOffHeadline: { fontFamily: fonts.boldItalic, fontSize: 26, color: colors.text, lineHeight: 32 },
-  castOffBody: { fontFamily: fonts.light, fontSize: 15, color: colors.textMid, lineHeight: 24 },
+  castOffHeadline: { fontFamily: fonts.boldItalic, fontSize: 28, color: colors.text, lineHeight: 36, marginTop: 4 },
+  castOffBody: { fontFamily: fonts.light, fontSize: 14, color: colors.textMid, lineHeight: 22 },
   castOffBtn: {
     alignSelf: 'flex-start',
     backgroundColor: colors.gold,
@@ -320,41 +390,48 @@ const s = StyleSheet.create({
   },
   castOffBtnText: { fontFamily: fonts.semiBold, fontSize: 14, color: colors.bg },
 
-  // Membership cards
-  membershipCard: {
-    backgroundColor: colors.bgCard,
+  section: { paddingHorizontal: 20, gap: 0 },
+  sectionHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    marginBottom: 14,
+  },
+  sectionLabel: {
+    fontFamily: fonts.semiBold, fontSize: 11, color: colors.textDim,
+    textTransform: 'uppercase', letterSpacing: 1.2,
+  },
+  sectionCount: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
+
+  groupCard: {
+    borderWidth: 1, borderColor: colors.borderStrong,
     borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.blueBorder,
-    padding: 18, gap: 8,
-  },
-  membershipTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  membershipHandle: { fontFamily: fonts.semiBold, fontSize: 13, color: colors.blue },
-  membershipStatus: { fontFamily: fonts.regular, fontSize: 11, color: colors.textDim },
-  membershipStatusEnded: { color: colors.rose },
-  membershipGoal: { fontFamily: fonts.regular, fontSize: 15, color: colors.text, lineHeight: 22 },
-  membershipCta: { fontFamily: fonts.semiBold, fontSize: 12, color: colors.blue },
-  capacityRow: { paddingTop: 2 },
-  capacityText: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
-
-  // Open voyages
-  openCard: {
     backgroundColor: colors.bgCard,
-    borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    padding: 18, gap: 8,
+    overflow: 'hidden',
   },
-  openHandle: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMid },
-  openGoal: { fontFamily: fonts.regular, fontSize: 15, color: colors.text, lineHeight: 22 },
-  openCta: { fontFamily: fonts.semiBold, fontSize: 12, color: colors.gold },
-
-  fullNotice: {
-    backgroundColor: colors.bgCard, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, padding: 18,
+  groupItem: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 16, paddingHorizontal: 16,
   },
-  fullNoticeText: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMid, lineHeight: 22 },
-  emptyText: { fontFamily: fonts.regular, fontSize: 14, color: colors.textDim },
+  groupItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  accentBar: { width: 3, height: 38, borderRadius: 2 },
+  groupBody: { flex: 1, gap: 5 },
+  groupTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  groupHandle: { fontFamily: fonts.semiBold, fontSize: 14 },
+  groupStatus: { fontFamily: fonts.regular, fontSize: 11 },
+  groupGoal: { fontFamily: fonts.regular, fontSize: 14, color: colors.text, lineHeight: 20 },
+  groupArrow: { fontFamily: fonts.semiBold, fontSize: 16, color: colors.textDim },
 
-  // Dev sheet
+  openIndex: {
+    fontFamily: fonts.light, fontSize: 20, color: colors.textDim,
+    width: 30, textAlign: 'center',
+  },
+  openHandle: { fontFamily: fonts.semiBold, fontSize: 12, color: colors.textMid },
+
+  capacityNote: {
+    fontFamily: fonts.regular, fontSize: 12, color: colors.textDim,
+    marginTop: 12, textAlign: 'right',
+  },
+  noticeText: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMid, lineHeight: 22 },
+
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.bgCard,
