@@ -1,13 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, ActivityIndicator, Alert, Modal, Image,
+  RefreshControl, ActivityIndicator, Modal, Image, TextInput, Switch,
   Dimensions,
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
 import {
-  getMyVoyage, getOpenVoyages, getPierMembers,
-  getActiveMemberships, seedOpenVoyages, seedPierMembers,
+  getHome, joinByCode, joinRandom, setOpenToWatch, devSeed, devFill, MAX_WATCHING,
 } from '../lib/supabase';
 
 const IMAGES = {
@@ -55,30 +54,20 @@ function StatusPill({ label, color }) {
 }
 
 export default function HomeScreen({ user, navigation }) {
-  const [myVoyage, setMyVoyage] = useState(null);
-  const [pierMembers, setPierMembers] = useState([]);
-  const [openVoyages, setOpenVoyages] = useState([]);
-  const [memberships, setMemberships] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [home, setHome] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [devVisible, setDevVisible] = useState(false);
-  const [seeding, setSeeding] = useState(false);
+  const [codeVisible, setCodeVisible] = useState(false);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    try {
-      const [voyage, open, mems] = await Promise.all([
-        getMyVoyage(user.id),
-        getOpenVoyages(user.id),
-        getActiveMemberships(user.id),
-      ]);
-      setMyVoyage(voyage);
-      setOpenVoyages(open);
-      setMemberships(mems);
-      if (voyage) setPierMembers(await getPierMembers(voyage.id));
-    } catch (e) { console.error(e); }
-  }, [user.id]);
+    try { setHome(await getHome()); }
+    catch (e) { setError(e.message); }
+  }, []);
 
-  useEffect(() => { load().finally(() => setLoading(false)); }, [load]);
+  useEffect(() => { load(); }, [load]);
   useEffect(() => { const u = navigation.addListener('focus', load); return u; }, [navigation, load]);
 
   const onRefresh = useCallback(async () => {
@@ -87,79 +76,74 @@ export default function HomeScreen({ user, navigation }) {
     setRefreshing(false);
   }, [load]);
 
-  async function devSeedVoyages() {
-    setSeeding(true);
-    try { await seedOpenVoyages(); await load(); setDevVisible(false); }
-    catch (e) { Alert.alert('Failed', e.message); }
-    finally { setSeeding(false); }
+  async function run(fn) {
+    setBusy(true);
+    setError('');
+    try { await fn(); await load(); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
   }
 
-  async function devFillPier() {
-    if (!myVoyage) return Alert.alert('No goal set', 'Set a goal first, then fill your pier.');
-    setSeeding(true);
-    try { await seedPierMembers(myVoyage.id); await load(); setDevVisible(false); }
-    catch (e) { Alert.alert('Failed', e.message); }
-    finally { setSeeding(false); }
+  const openPier = (v) => navigation.navigate('PierWatch', { voyageId: v.id, handle: v.handle });
+
+  if (!home) {
+    return <View style={s.center}>{error ? <Text style={s.noticeText}>{error}</Text> : <ActivityIndicator color={colors.gold} />}</View>;
   }
 
-  if (loading) return <View style={s.center}><ActivityIndicator color={colors.gold} /></View>;
-
-  const needsReckoning = myVoyage && ['returned', 'lost'].includes(myVoyage.status) && !myVoyage.reckoning_at;
-  const hasActiveGoal = myVoyage && ['open', 'underway'].includes(myVoyage.status);
+  const { my_voyage: myVoyage, needs_reckoning: reckon, watching, open: openVoyages, watch_count: watchCount, me } = home;
+  const canJoinMore = watchCount < MAX_WATCHING;
   const isUnderway = myVoyage?.status === 'underway';
-  const canJoinMore = memberships.length < 3;
+  const seats = myVoyage?.mode === 'solo' ? 1 : 2;
 
   return (
     <>
       <ScrollView
         style={s.container}
         contentContainerStyle={s.content}
+        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.gold} />}
       >
-        {/* ── HEADER ── */}
         <View style={s.header}>
           <Text style={s.wordmark}>Piers</Text>
           <View style={s.headerRight}>
             <Text style={s.handle}>@{user.handle}</Text>
-            <TouchableOpacity style={s.devBtn} onPress={() => setDevVisible(true)}>
-              <Text style={s.devBtnText}>Dev</Text>
-            </TouchableOpacity>
+            {__DEV__ && (
+              <TouchableOpacity style={s.devBtn} onPress={() => setDevVisible(true)}>
+                <Text style={s.devBtnText}>Dev</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
-        {/* ── RECKONING BANNER ── */}
-        {needsReckoning && (
+        {reckon && (
           <TouchableOpacity
             style={s.reckoningBanner}
-            onPress={() => navigation.navigate('Reckoning', { voyage: myVoyage })}
+            onPress={() => navigation.navigate('Reckoning', { voyage: reckon })}
             activeOpacity={0.8}
           >
             <View style={s.reckoningDot} />
             <View style={s.reckoningBody}>
               <Text style={s.reckoningEyebrow}>
-                {myVoyage.status === 'returned' ? 'You completed your goal' : 'The week has passed'}
+                {reckon.status === 'returned' ? 'You completed your goal' : 'The week has passed'}
               </Text>
-              <Text style={s.reckoningGoal} numberOfLines={1}>{myVoyage.goal}</Text>
+              <Text style={s.reckoningGoal} numberOfLines={1}>{reckon.goal}</Text>
             </View>
             <Text style={s.reckoningArrow}>→</Text>
           </TouchableOpacity>
         )}
 
-        {/* ── HERO CARD ── */}
-        {hasActiveGoal ? (
+        {myVoyage ? (
           <TouchableOpacity
             style={s.heroCard}
-            onPress={() => navigation.navigate('MyVoyage', { voyage: myVoyage, pierMembers })}
+            onPress={() => navigation.navigate('MyVoyage', { voyageId: myVoyage.id })}
             activeOpacity={0.88}
           >
-            <Image source={pierImage(pierMembers.length)} style={s.heroImage} resizeMode="cover" />
+            <Image source={pierImage(myVoyage.member_count)} style={s.heroImage} resizeMode="cover" />
             <View style={s.heroFade} />
             <View style={s.heroContent}>
-              {(() => {
-                const elapsed = Math.min(1, Math.max(0,
-                  (Date.now() - new Date(myVoyage.created_at)) /
-                  (new Date(myVoyage.expires_at) - new Date(myVoyage.created_at))
-                ));
+              {isUnderway && (() => {
+                const start = new Date(myVoyage.started_at || myVoyage.created_at);
+                const elapsed = Math.min(1, Math.max(0, (Date.now() - start) / (new Date(myVoyage.expires_at) - start)));
                 return (
                   <View style={s.progressTrack}>
                     <View style={[s.progressFill, { width: `${elapsed * 100}%` }]} />
@@ -168,14 +152,14 @@ export default function HomeScreen({ user, navigation }) {
               })()}
               <View style={s.heroTopRow}>
                 <StatusPill
-                  label={isUnderway ? 'Underway' : 'Seeking support'}
+                  label={isUnderway ? (myVoyage.mode === 'solo' ? 'Underway · Solo' : 'Underway') : 'Filling your pier'}
                   color={isUnderway ? colors.gold : colors.blue}
                 />
-                <Text style={s.heroTimer}>{timeLeft(myVoyage.expires_at)}</Text>
+                {isUnderway && <Text style={s.heroTimer}>{timeLeft(myVoyage.expires_at)}</Text>}
               </View>
               <Text style={s.heroGoal}>{myVoyage.goal}</Text>
               <View style={s.heroBottom}>
-                <PierDots filled={pierMembers.length} />
+                <PierDots filled={myVoyage.member_count} total={seats} />
                 <Text style={s.heroViewCta}>View pier →</Text>
               </View>
             </View>
@@ -192,7 +176,7 @@ export default function HomeScreen({ user, navigation }) {
               <Text style={s.castOffEyebrow}>This week</Text>
               <Text style={s.castOffHeadline}>What will you{'\n'}do?</Text>
               <Text style={s.castOffBody}>
-                Name it precisely. Name your obstacle.{'\n'}Two strangers will stand witness.
+                Name it. Name your obstacle.{'\n'}Two peers stand witness.
               </Text>
               <View style={s.castOffBtn}>
                 <Text style={s.castOffBtnText}>Cast off →</Text>
@@ -201,34 +185,33 @@ export default function HomeScreen({ user, navigation }) {
           </TouchableOpacity>
         )}
 
-        {/* ── STANDING ON ── */}
-        {memberships.length > 0 && (
-          <View style={s.section}>
-            <View style={s.sectionHeader}>
-              <Text style={s.sectionLabel}>You're standing on</Text>
-              <Text style={s.sectionCount}>{memberships.length} of 3</Text>
-            </View>
+        <View style={s.section}>
+          <View style={s.sectionHeader}>
+            <Text style={s.sectionLabel}>You're standing on</Text>
+            <Text style={s.sectionCount}>{watchCount} of {MAX_WATCHING}</Text>
+          </View>
+
+          {watching.length > 0 && (
             <View style={s.groupCard}>
-              {memberships.map((m, idx) => {
-                const v = m.piers_voyages;
-                if (!v) return null;
+              {watching.map((v, idx) => {
                 const ended = ['returned', 'lost'].includes(v.status);
                 const accentColor = ended ? colors.rose : v.status === 'underway' ? colors.gold : colors.blue;
-                const statusLabel = v.status === 'open' ? 'Seeking support'
-                  : v.status === 'underway' ? 'Underway'
+                const statusLabel = v.waiting_on_me ? `${v.waiting_on_me} waiting on you`
+                  : v.status === 'open' ? 'Filling'
+                  : v.status === 'underway' ? (v.mode === 'solo' ? 'Solo' : 'Underway')
                   : v.status === 'returned' ? 'Returned' : 'Ended';
                 return (
                   <TouchableOpacity
-                    key={m.id}
-                    style={[s.groupItem, idx < memberships.length - 1 && s.groupItemBorder]}
-                    onPress={() => navigation.navigate('PierWatch', { membership: m })}
+                    key={v.id}
+                    style={[s.groupItem, idx < watching.length - 1 && s.groupItemBorder]}
+                    onPress={() => openPier(v)}
                     activeOpacity={0.75}
                   >
                     <View style={[s.accentBar, { backgroundColor: accentColor }]} />
                     <View style={s.groupBody}>
                       <View style={s.groupTop}>
-                        <Text style={[s.groupHandle, { color: accentColor }]}>@{v.piers_users?.handle}</Text>
-                        <Text style={[s.groupStatus, { color: accentColor + 'aa' }]}>{statusLabel}</Text>
+                        <Text style={[s.groupHandle, { color: accentColor }]}>@{v.handle}</Text>
+                        <Text style={[s.groupStatus, { color: v.waiting_on_me ? colors.gold : accentColor + 'aa' }]}>{statusLabel}</Text>
                       </View>
                       <Text style={s.groupGoal} numberOfLines={2}>{v.goal}</Text>
                     </View>
@@ -237,61 +220,100 @@ export default function HomeScreen({ user, navigation }) {
                 );
               })}
             </View>
-            {canJoinMore && (
-              <Text style={s.capacityNote}>
-                + {3 - memberships.length} more pier{3 - memberships.length > 1 ? 's' : ''} available
-              </Text>
-            )}
-          </View>
-        )}
+          )}
 
-        {/* ── OPEN VOYAGES ── */}
-        {(openVoyages.length > 0 || memberships.length === 0) && (
+          {canJoinMore ? (
+            <View style={s.actionRow}>
+              <TouchableOpacity style={s.actionBtn} onPress={() => { setCode(''); setError(''); setCodeVisible(true); }}>
+                <Text style={s.actionText}>Join with code</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.actionBtn} disabled={busy}
+                onPress={() => run(async () => { const id = await joinRandom(); openPier({ id }); })}>
+                {busy ? <ActivityIndicator color={colors.gold} size="small" /> : <Text style={s.actionText}>Find someone</Text>}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Text style={s.noticeText}>You're on {MAX_WATCHING} piers. That's the limit until one ends.</Text>
+          )}
+
+          <View style={s.switchRow}>
+            <View style={s.switchBody}>
+              <Text style={s.switchTitle}>Open to watch</Text>
+              <Text style={s.switchSub}>Get placed on new piers as they cast off.</Text>
+            </View>
+            <Switch
+              value={!!me?.open_to_watch}
+              onValueChange={(on) => run(() => setOpenToWatch(on))}
+              trackColor={{ true: colors.gold }}
+            />
+          </View>
+          {!!error && !codeVisible && <Text style={s.errorText}>{error}</Text>}
+        </View>
+
+        {canJoinMore && openVoyages.length > 0 && (
           <View style={s.section}>
             <View style={s.sectionHeader}>
               <Text style={s.sectionLabel}>Seeking support</Text>
             </View>
-            {!canJoinMore ? (
-              <Text style={s.noticeText}>
-                You're supporting three people — the limit. Acknowledge someone when their voyage ends to open a spot.
-              </Text>
-            ) : openVoyages.length === 0 ? (
-              <Text style={s.noticeText}>No goals out yet. Be the first to cast off.</Text>
-            ) : (
-              <View style={s.groupCard}>
-                {openVoyages.map((v, idx) => (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={[s.groupItem, idx < openVoyages.length - 1 && s.groupItemBorder]}
-                    onPress={() => navigation.navigate('JoinPier', { voyage: v })}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={s.openIndex}>{String(idx + 1).padStart(2, '0')}</Text>
-                    <View style={s.groupBody}>
-                      <Text style={s.openHandle}>@{v.piers_users?.handle}</Text>
-                      <Text style={s.groupGoal} numberOfLines={2}>{v.goal}</Text>
+            <View style={s.groupCard}>
+              {openVoyages.map((v, idx) => (
+                <TouchableOpacity
+                  key={v.id}
+                  style={[s.groupItem, idx < openVoyages.length - 1 && s.groupItemBorder]}
+                  onPress={() => navigation.navigate('JoinPier', { voyage: v })}
+                  activeOpacity={0.75}
+                >
+                  <Text style={s.openIndex}>{String(idx + 1).padStart(2, '0')}</Text>
+                  <View style={s.groupBody}>
+                    <View style={s.groupTop}>
+                      <Text style={s.openHandle}>@{v.handle}</Text>
+                      <Text style={s.groupStatus}>{v.mode === 'solo' ? '1 seat' : `${2 - v.member_count} of 2 open`}</Text>
                     </View>
-                    <Text style={s.groupArrow}>→</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
+                    <Text style={s.groupGoal} numberOfLines={2}>{v.goal}</Text>
+                  </View>
+                  <Text style={s.groupArrow}>→</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
       </ScrollView>
 
-      {/* ── DEV PANEL ── */}
+      <Modal visible={codeVisible} transparent animationType="slide">
+        <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setCodeVisible(false)}>
+          <TouchableOpacity style={s.sheet} activeOpacity={1}>
+            <View style={s.sheetHandle} />
+            <Text style={s.sheetTitle}>Join with code</Text>
+            <Text style={s.sheetSub}>Ask them for their pier code.</Text>
+            <TextInput
+              style={s.codeInput} value={code} onChangeText={(t) => setCode(t.toUpperCase())}
+              placeholder="ABC123" placeholderTextColor={colors.textDim}
+              autoCapitalize="characters" autoCorrect={false} maxLength={12} autoFocus
+            />
+            {!!error && <Text style={s.errorText}>{error}</Text>}
+            <TouchableOpacity style={s.sheetBtn} disabled={busy || !code.trim()}
+              onPress={() => run(async () => { const id = await joinByCode(code.trim()); setCodeVisible(false); openPier({ id }); })}>
+              {busy ? <ActivityIndicator color={colors.bg} /> : <Text style={s.sheetBtnText}>Stand on their pier</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={s.sheetCancel} onPress={() => setCodeVisible(false)}>
+              <Text style={s.sheetCancelText}>Close</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       <Modal visible={devVisible} transparent animationType="slide">
         <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setDevVisible(false)}>
           <View style={s.sheet}>
             <View style={s.sheetHandle} />
             <Text style={s.sheetTitle}>Dev Tools</Text>
             <Text style={s.sheetSub}>Simulate other users to test the full flow.</Text>
-            <TouchableOpacity style={s.sheetBtn} onPress={devSeedVoyages} disabled={seeding}>
-              {seeding ? <ActivityIndicator color={colors.bg} /> : <Text style={s.sheetBtnText}>Seed 3 open goals</Text>}
+            <TouchableOpacity style={s.sheetBtn} disabled={busy} onPress={() => run(async () => { await devSeed(); setDevVisible(false); })}>
+              <Text style={s.sheetBtnText}>Seed 3 open goals</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[s.sheetBtn, { backgroundColor: colors.blue }]} onPress={devFillPier} disabled={seeding}>
-              {seeding ? <ActivityIndicator color={colors.bg} /> : <Text style={s.sheetBtnText}>Fill my pier with 2 fake supporters</Text>}
+            <TouchableOpacity style={[s.sheetBtn, { backgroundColor: colors.blue }]} disabled={busy || !myVoyage}
+              onPress={() => run(async () => { await devFill(); setDevVisible(false); })}>
+              <Text style={s.sheetBtnText}>Fill my pier with fake peers</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.sheetCancel} onPress={() => setDevVisible(false)}>
               <Text style={s.sheetCancelText}>Close</Text>
@@ -446,4 +468,20 @@ const s = StyleSheet.create({
   sheetBtnText: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.bg },
   sheetCancel: { alignItems: 'center', paddingVertical: 8 },
   sheetCancelText: { fontFamily: fonts.regular, fontSize: 14, color: colors.textDim },
+
+  actionRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 20 },
+  actionBtn: {
+    flex: 1, borderWidth: 1, borderColor: colors.goldBorder, borderRadius: radius.md,
+    paddingVertical: 13, alignItems: 'center',
+  },
+  actionText: { fontFamily: fonts.semiBold, fontSize: 14, color: colors.gold },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 22 },
+  switchBody: { flex: 1, gap: 2 },
+  switchTitle: { fontFamily: fonts.semiBold, fontSize: 14, color: colors.text },
+  switchSub: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
+  errorText: { fontFamily: fonts.regular, fontSize: 13, color: colors.rose, paddingHorizontal: 22 },
+  codeInput: {
+    fontFamily: fonts.bold, fontSize: 24, letterSpacing: 4, color: colors.text, textAlign: 'center',
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingVertical: 14,
+  },
 });

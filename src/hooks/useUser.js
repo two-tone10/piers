@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { supabase } from '../lib/supabase';
+import { createUser as createUserRpc, getMe, setSessionToken } from '../lib/supabase';
 
 const USER_KEY = 'piers_user';
 
@@ -12,16 +12,15 @@ export function useUser() {
     (async () => {
       try {
         const stored = await SecureStore.getItemAsync(USER_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          // Verify still valid
-          const { data } = await supabase
-            .from('piers_users')
-            .select('*')
-            .eq('id', parsed.id)
-            .maybeSingle();
-          if (data) setUser(data);
-          else await SecureStore.deleteItemAsync(USER_KEY);
+        const token = stored ? JSON.parse(stored)?.session_token : null;
+        if (token) {
+          const data = await getMe(token);
+          if (data) {
+            setSessionToken(data.session_token);
+            setUser(data);
+          } else {
+            await SecureStore.deleteItemAsync(USER_KEY);
+          }
         }
       } catch (_) {}
       setLoading(false);
@@ -29,20 +28,16 @@ export function useUser() {
   }, []);
 
   const createUser = useCallback(async (handle) => {
-    const trimmed = handle.trim().slice(0, 40);
-    const { data, error } = await supabase
-      .from('piers_users')
-      .insert({ handle: trimmed })
-      .select()
-      .single();
-    if (error) throw error;
+    const data = await createUserRpc(handle.trim().slice(0, 40));
     await SecureStore.setItemAsync(USER_KEY, JSON.stringify(data));
+    setSessionToken(data.session_token);
     setUser(data);
     return data;
   }, []);
 
   const clearUser = useCallback(async () => {
     await SecureStore.deleteItemAsync(USER_KEY);
+    setSessionToken(null);
     setUser(null);
   }, []);
 

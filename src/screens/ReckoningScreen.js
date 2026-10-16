@@ -4,7 +4,7 @@ import {
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
-import { supabase } from '../lib/supabase';
+import { reckon } from '../lib/supabase';
 
 export default function ReckoningScreen({ route, navigation }) {
   const { voyage } = route.params;
@@ -15,10 +15,7 @@ export default function ReckoningScreen({ route, navigation }) {
   async function submit() {
     setLoading(true);
     try {
-      await supabase
-        .from('piers_voyages')
-        .update({ reckoning: reckoning.trim() || null, reckoning_at: new Date().toISOString() })
-        .eq('id', voyage.id);
+      await reckon(voyage.id, reckoning.trim());
       navigation.goBack();
     } catch (e) {
       console.error(e);
