@@ -6,7 +6,8 @@ import {
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
 import {
-  getHome, joinByCode, joinRandom, setOpenToWatch, devSeed, devFill, MAX_WATCHING,
+  getHome, joinByCode, joinRandom, setOpenToWatch, devSeed, devFill, devAdvanceDay, devReset,
+  MAX_WATCHING, IS_LOCAL,
 } from '../lib/supabase';
 
 const IMAGES = {
@@ -69,6 +70,10 @@ export default function HomeScreen({ user, navigation }) {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { const u = navigation.addListener('focus', load); return u; }, [navigation, load]);
+  useEffect(() => {
+    const id = setInterval(() => { if (navigation.isFocused()) load(); }, 10000);
+    return () => clearInterval(id);
+  }, [navigation, load]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -106,8 +111,8 @@ export default function HomeScreen({ user, navigation }) {
         <View style={s.header}>
           <Text style={s.wordmark}>Piers</Text>
           <View style={s.headerRight}>
-            <Text style={s.handle}>@{user.handle}</Text>
-            {__DEV__ && (
+            <Text style={s.handle}>@{user.handle}{IS_LOCAL ? ' · demo' : ''}</Text>
+            {(__DEV__ || IS_LOCAL) && (
               <TouchableOpacity style={s.devBtn} onPress={() => setDevVisible(true)}>
                 <Text style={s.devBtnText}>Dev</Text>
               </TouchableOpacity>
@@ -307,7 +312,7 @@ export default function HomeScreen({ user, navigation }) {
           <View style={s.sheet}>
             <View style={s.sheetHandle} />
             <Text style={s.sheetTitle}>Dev Tools</Text>
-            <Text style={s.sheetSub}>Simulate other users to test the full flow.</Text>
+            <Text style={s.sheetSub}>{IS_LOCAL ? 'Demo world on this device. Everyone else is simulated.' : 'Simulate other users to test the full flow.'}</Text>
             <TouchableOpacity style={s.sheetBtn} disabled={busy} onPress={() => run(async () => { await devSeed(); setDevVisible(false); })}>
               <Text style={s.sheetBtnText}>Seed 3 open goals</Text>
             </TouchableOpacity>
@@ -315,6 +320,18 @@ export default function HomeScreen({ user, navigation }) {
               onPress={() => run(async () => { await devFill(); setDevVisible(false); })}>
               <Text style={s.sheetBtnText}>Fill my pier with fake peers</Text>
             </TouchableOpacity>
+            {IS_LOCAL && (
+              <>
+                <TouchableOpacity style={[s.sheetBtn, { backgroundColor: colors.blue }]} disabled={busy}
+                  onPress={() => run(async () => { await devAdvanceDay(); setDevVisible(false); })}>
+                  <Text style={s.sheetBtnText}>Skip ahead a day</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.sheetCancel} disabled={busy}
+                  onPress={() => run(async () => { await devReset(); setDevVisible(false); })}>
+                  <Text style={s.sheetCancelText}>Reset demo world</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <TouchableOpacity style={s.sheetCancel} onPress={() => setDevVisible(false)}>
               <Text style={s.sheetCancelText}>Close</Text>
             </TouchableOpacity>

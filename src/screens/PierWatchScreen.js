@@ -226,7 +226,7 @@ export default function PierWatchScreen({ route, navigation, user }) {
 
         {tab === 'shore' && (
           <View style={st.tabContent}>
-            <Text style={st.meta}>Just you and @{other?.handle ?? '…'}. @{handle} can't see this.</Text>
+            <Text style={st.meta}>You and @{other?.handle ?? '…'} only. @{handle} can't see this.</Text>
             {shore.length === 0 && <Text style={st.empty}>Nothing said yet.</Text>}
             {shore.map((m) => {
               const mine = m.sender_id === user.id;

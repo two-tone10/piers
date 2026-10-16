@@ -72,6 +72,10 @@ export default function MyVoyageScreen({ route, navigation }) {
   }, [voyageId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const id = setInterval(load, 8000);
+    return () => clearInterval(id);
+  }, [load]);
 
   async function run(fn) {
     setBusy(true);

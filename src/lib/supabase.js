@@ -1,8 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
+import { localRpc } from './local/engine';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+// Local, on-device world with simulated peers unless EXPO_PUBLIC_PIERS_BACKEND=supabase.
+export const IS_LOCAL = process.env.EXPO_PUBLIC_PIERS_BACKEND !== 'supabase';
 
 const ExpoSecureStoreAdapter = {
   getItem: (key) => SecureStore.getItemAsync(key),
@@ -10,7 +14,7 @@ const ExpoSecureStoreAdapter = {
   removeItem: (key) => SecureStore.deleteItemAsync(key),
 };
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = IS_LOCAL ? null : createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: ExpoSecureStoreAdapter,
     autoRefreshToken: true,
@@ -18,6 +22,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
+
+async function call(fn, args) {
+  if (IS_LOCAL) return localRpc(fn, args);
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) throw new Error(error.message);
+  return data;
+}
 
 // ── Pulse constants ───────────────────────────────────────────────────────────
 
@@ -45,11 +56,7 @@ export function setSessionToken(token) {
   sessionToken = token || null;
 }
 
-async function rpc(fn, args = {}) {
-  const { data, error } = await supabase.rpc(fn, { p_token: sessionToken, ...args });
-  if (error) throw new Error(error.message);
-  return data;
-}
+const rpc = (fn, args = {}) => call(fn, { p_token: sessionToken, ...args });
 
 export const MAX_WATCHING = 10;
 
@@ -67,14 +74,8 @@ export function supplyLabel(kind) {
 
 // ── Identity ──────────────────────────────────────────────────────────────────
 
-export async function createUser(handle) {
-  const { data, error } = await supabase.rpc('piers_create_user', { p_handle: handle });
-  if (error) throw new Error(error.message);
-  return data;
-}
-
-export const getMe = (token) => supabase.rpc('piers_me', { p_token: token })
-  .then(({ data, error }) => { if (error) throw new Error(error.message); return data; });
+export const createUser = (handle) => call('piers_create_user', { p_handle: handle });
+export const getMe = (token) => call('piers_me', { p_token: token });
 
 export const setOpenToWatch = (on) => rpc('piers_set_open_to_watch', { p_on: on });
 
@@ -123,6 +124,8 @@ export const blockUser = (userId) => rpc('piers_block', { p_target: userId });
 
 export const devSeed = () => rpc('piers_dev_seed');
 export const devFill = () => rpc('piers_dev_fill');
+export const devAdvanceDay = () => rpc('piers_dev_advance');
+export const devReset = () => rpc('piers_dev_reset');
 
 export function todayKey() {
   return new Date().toISOString().slice(0, 10);
