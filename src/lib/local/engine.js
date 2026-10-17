@@ -1,7 +1,7 @@
 import { loadWorld, saveWorld } from './store';
 import {
   BOT_HANDLES, BOT_GOALS, BOT_PULSE_NOTES, BOT_WORDS, SHORE_GREETINGS, SHORE_REPLIES,
-  SHORE_PROPOSE_LINES, BOT_SUPPLIES, BOT_SIGNALS, BOT_ACKS,
+  SHORE_PROPOSE_LINES, BOT_SUPPLIES, BOT_SIGNALS, BOT_ACKS, BOT_NOTES,
 } from './content';
 
 const SEC = 1000;
@@ -72,7 +72,7 @@ function userJson(u) {
 
 function voyageJson(v) {
   const { reckoning, ...rest } = v;
-  return { ...rest, handle: handleOf(v.user_id), member_count: membersOf(v.id).length };
+  return { ...rest, handle: handleOf(v.user_id), member_count: membersOf(v.id).length, log_count: logCount(v) };
 }
 
 // ── World building ────────────────────────────────────────────────────────────
@@ -104,10 +104,20 @@ function peerBot(vid, exclude = []) {
   return candidates.length ? pick(candidates) : bot();
 }
 
-function newVoyage(ownerId, { goal, obstacle, mode = 'pair', listed = true }) {
+const logCount = (v) => W.pulses.filter((p) => p.voyage_id === v.id && p.status !== 'rest_day').length;
+const weeksTogether = (owner, member) => W.voyages.filter((x) => x.user_id === owner && memberOf(x.id, member)).length;
+const TARGET_WORDS = { once: 1, twice: 2, two: 2, three: 3, four: 4, five: 5, six: 6, every: 7, daily: 7 };
+
+function guessTarget(goal) {
+  const w = String(goal).toLowerCase().match(/\b(once|twice|two|three|four|five|six|every|daily|[1-7])\b/);
+  return w ? TARGET_WORDS[w[1]] ?? Number(w[1]) : 3;
+}
+
+function newVoyage(ownerId, { goal, obstacle, mode = 'pair', listed = true, target }) {
   const t = now();
   const v = {
     id: uid(), user_id: ownerId, goal, obstacle, status: 'open', mode, listed,
+    target: Math.min(Math.max(Number(target) || guessTarget(goal), 1), 7), result: null,
     invite_code: code(), created_at: iso(t), expires_at: iso(t + WEEK), started_at: null,
     claimed_at: null, completed_at: null, rest_days_used: 0, reckoning: null, reckoning_at: null,
   };
@@ -167,9 +177,7 @@ function maybeStart(v) {
     later(v.mode === 'solo' ? rand(3, 6) * MIN : rand(2, 5) * DAY, 'bot_claim', { voyage: v.id });
   } else if (v.mode === 'pair') {
     later(rand(40, 70) * SEC, 'bot_signal', { voyage: v.id });
-    later(rand(1.5, 2.5) * MIN, 'bot_propose', { voyage: v.id, supply: BOT_SUPPLIES[0] });
-    later(rand(4, 6) * MIN, 'bot_propose', { voyage: v.id, supply: BOT_SUPPLIES[3] });
-    later(rand(8, 12) * MIN, 'bot_propose', { voyage: v.id, supply: pick([BOT_SUPPLIES[1], BOT_SUPPLIES[2]]) });
+    later(rand(2, 4) * MIN, 'bot_propose', { voyage: v.id, supply: { kind: 'extra_day' } });
   } else {
     later(rand(40, 70) * SEC, 'bot_signal', { voyage: v.id });
   }
@@ -178,8 +186,7 @@ function maybeStart(v) {
 function onJoined(v, u) {
   const other = coPeer(v.id, u);
   if (other && isBot(other) && v.mode === 'pair') {
-    later(rand(6, 12) * SEC, 'bot_shore', { voyage: v.id, from: other, body: pick(SHORE_GREETINGS) });
-    later(rand(40, 80) * SEC, 'bot_propose', { voyage: v.id, from: other, supply: pick(BOT_SUPPLIES.slice(0, 3)) });
+    later(rand(40, 80) * SEC, 'bot_propose', { voyage: v.id, from: other, supply: { kind: 'extra_day' } });
   }
   if (v.status === 'open' && membersOf(v.id).length < seats(v)) {
     later(rand(15, 40) * SEC, 'bot_join', { voyage: v.id });
@@ -241,8 +248,7 @@ const handlers = {
     const v = voyage(id);
     const m = v && membersOf(id).find((x) => isBot(x.user_id));
     if (!m || ended(v)) return;
-    const q = pick(BOT_SIGNALS);
-    W.signals.push({ id: uid(), voyage_id: id, sender_id: m.user_id, quote: q.quote, author: q.author, created_at: iso(now()) });
+    W.signals.push({ id: uid(), voyage_id: id, sender_id: m.user_id, quote: pick(BOT_NOTES), author: null, created_at: iso(now()) });
   },
   bot_respond({ pulse: pid, from }) {
     if (W.responses.some((r) => r.pulse_id === pid && r.sender_id === from)) return;
@@ -264,7 +270,6 @@ const handlers = {
     const s = propose(v, proposer, supply);
     const other = peers.find((p) => p !== proposer);
     if (isBot(other)) later(rand(10, 30) * SEC, 'bot_cosign', { supply: s.id, from: other });
-    else W.shore.push({ id: uid(), voyage_id: id, sender_id: proposer, body: SHORE_PROPOSE_LINES[s.kind], created_at: iso(now()) });
   },
   bot_cosign({ supply: sid, from }) {
     const s = W.supplies.find((x) => x.id === sid);
@@ -297,7 +302,7 @@ function tick() {
   for (const v of W.voyages) {
     if (v.status !== 'underway' || !isBot(v.user_id)) continue;
     if (W.pulses.some((p) => p.voyage_id === v.id && p.date_key === today)) continue;
-    const p = { id: uid(), voyage_id: v.id, status: pick(PULSE_KEYS), note: pick(BOT_PULSE_NOTES), date_key: today, created_at: iso(t) };
+    const p = { id: uid(), voyage_id: v.id, status: 'done', note: null, date_key: today, created_at: iso(t) };
     W.pulses.push(p);
     membersOf(v.id).filter((m) => isBot(m.user_id)).forEach((m) => later(rand(20, 120) * SEC, 'bot_respond', { pulse: p.id, from: m.user_id }));
   }
@@ -364,11 +369,11 @@ const rpcs = {
     return userJson(u);
   },
 
-  piers_cast_off({ p_token, p_goal, p_obstacle, p_mode, p_listed }) {
+  piers_cast_off({ p_token, p_goal, p_obstacle, p_mode, p_listed, p_target }) {
     const me = uidFromToken(p_token);
     if (W.voyages.some((v) => v.user_id === me && active(v))) fail('You already have a goal out.');
     if (!p_goal?.trim()) fail('Name your goal.');
-    const v = newVoyage(me, { goal: p_goal.trim(), obstacle: p_obstacle?.trim() || null, mode: p_mode === 'solo' ? 'solo' : 'pair', listed: p_listed !== false });
+    const v = newVoyage(me, { goal: p_goal.trim(), obstacle: p_obstacle?.trim() || null, mode: p_mode === 'solo' ? 'solo' : 'pair', listed: p_listed !== false, target: p_target });
     later(rand(12, 25) * SEC, 'bot_join', { voyage: v.id });
     if (v.mode === 'pair') later(rand(50, 90) * SEC, 'bot_join', { voyage: v.id });
     return voyageJson(v);
@@ -413,6 +418,17 @@ const rpcs = {
   piers_reckon({ p_token, p_voyage, p_text }) {
     const v = ownVoyage(uidFromToken(p_token), p_voyage);
     v.reckoning = p_text || null;
+    v.reckoning_at = iso(now());
+  },
+  piers_close_week({ p_token, p_voyage, p_result, p_text }) {
+    const v = ownVoyage(uidFromToken(p_token), p_voyage);
+    if (!['yes', 'partly', 'no'].includes(p_result)) fail('Pick Yes, Partly or No.');
+    if (active(v)) {
+      if (v.status === 'open') fail('Your week hasn\'t started.');
+      finish(v);
+    }
+    v.result = p_result;
+    v.reckoning = p_text?.trim() || null;
     v.reckoning_at = iso(now());
   },
   piers_open_supply({ p_token, p_supply }) {
@@ -537,6 +553,7 @@ const rpcs = {
       my_voyage: current ? voyageJson(current) : null,
       needs_reckoning: reck ? voyageJson(reck) : null,
       watch_count: watchCount(me),
+      now: iso(now()),
       watching,
       open,
     };
@@ -557,8 +574,10 @@ const rpcs = {
       role,
       voyage: { ...voyageJson(v), ...(role === 'pursuer' ? { reckoning: v.reckoning } : {}) },
       rest_days_left: restsLeft(v),
+      now: iso(now()),
+      logged_today: W.pulses.some((p) => p.voyage_id === v.id && p.date_key === dayKey(now())),
       members: vis ? [] : membersOf(v.id).map((m) => ({
-        user_id: m.user_id, handle: handleOf(m.user_id), joined_at: m.joined_at,
+        user_id: m.user_id, handle: handleOf(m.user_id), joined_at: m.joined_at, weeks_together: weeksTogether(v.user_id, m.user_id),
         acknowledged_at: m.acknowledged_at, acknowledgement: m.acknowledgement,
       })),
       signals: vis ? [] : W.signals.filter((s) => s.voyage_id === v.id).map((s) => ({ ...s, handle: handleOf(s.sender_id) })),

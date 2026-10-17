@@ -88,8 +88,10 @@ export const getLogbook = () => rpc('piers_logbook');
 
 // ── Pursuer ───────────────────────────────────────────────────────────────────
 
-export const castOff = ({ goal, obstacle, mode, listed }) =>
-  rpc('piers_cast_off', { p_goal: goal, p_obstacle: obstacle, p_mode: mode, p_listed: listed });
+export const castOff = ({ goal, obstacle, mode, listed, target }) =>
+  rpc('piers_cast_off', { p_goal: goal, p_obstacle: obstacle, p_mode: mode, p_listed: listed, p_target: target });
+export const closeWeek = (voyageId, result, text) =>
+  rpc('piers_close_week', { p_voyage: voyageId, p_result: result, p_text: text || null });
 export const goWithOne = (voyageId) => rpc('piers_go_with_one', { p_voyage: voyageId });
 export const setListed = (voyageId, listed) => rpc('piers_set_listed', { p_voyage: voyageId, p_listed: listed });
 export const claimDone = (voyageId) => rpc('piers_claim_done', { p_voyage: voyageId });

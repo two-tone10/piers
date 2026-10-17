@@ -1,178 +1,80 @@
 import React from 'react';
-import { View, Text, Image, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-
-const SPLASH_IMAGE = require('./assets/splash-pier.png');
-import {
-  useFonts,
-  Raleway_300Light,
-  Raleway_400Regular,
-  Raleway_400Regular_Italic,
-  Raleway_600SemiBold,
-  Raleway_700Bold,
-  Raleway_700Bold_Italic,
-} from '@expo-google-fonts/raleway';
+import { useFonts, InstrumentSans_400Regular, InstrumentSans_600SemiBold } from '@expo-google-fonts/instrument-sans';
 
 import { useUser } from './src/hooks/useUser';
 import { colors, fonts } from './src/lib/theme';
-
-import OnboardingFlow from './src/screens/OnboardingFlow';
-import HomeScreen from './src/screens/HomeScreen';
-import HarborScreen from './src/screens/HarborScreen';
-import LogbookScreen from './src/screens/LogbookScreen';
-import CastOffScreen from './src/screens/CastOffScreen';
-import MyVoyageScreen from './src/screens/MyVoyageScreen';
-import JoinPierScreen from './src/screens/JoinPierScreen';
-import PierWatchScreen from './src/screens/PierWatchScreen';
-import ReckoningScreen from './src/screens/ReckoningScreen';
+import OnboardingScreen from './src/screens/OnboardingScreen';
+import ThisWeekScreen from './src/screens/ThisWeekScreen';
+import WitnessingScreen from './src/screens/WitnessingScreen';
+import HistoryScreen from './src/screens/HistoryScreen';
+import SetGoalScreen from './src/screens/SetGoalScreen';
+import FriendWeekScreen from './src/screens/FriendWeekScreen';
+import EndWeekScreen from './src/screens/EndWeekScreen';
+import JoinCodeScreen from './src/screens/JoinCodeScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
-const { width: W } = Dimensions.get('window');
-
-const stackOptions = {
-  headerShown: false,
-  contentStyle: { backgroundColor: colors.bg },
-  animation: 'slide_from_right',
-};
 
 function TabLabel({ label, focused }) {
   return (
-    <Text style={{
-      fontFamily: focused ? fonts.semiBold : fonts.regular,
-      fontSize: 12,
-      color: focused ? colors.gold : colors.textDim,
-      letterSpacing: 0.4,
-      textAlign: 'center',
-      marginTop: 2,
-    }}>
+    <Text numberOfLines={1} style={{ fontFamily: focused ? fonts.semiBold : fonts.regular, fontSize: 17, color: colors.ink }}>
       {label}
     </Text>
   );
 }
+
+const tab = (label) => ({ tabBarLabel: ({ focused }) => <TabLabel label={label} focused={focused} />, tabBarAccessibilityLabel: label });
 
 function Tabs({ user }) {
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: colors.bgCard,
-          borderTopColor: colors.border,
-          borderTopWidth: 1,
-          height: 62,
-          paddingBottom: 8,
-          paddingTop: 8,
-        },
-        tabBarLabel: () => null,
+        tabBarIcon: () => null,
+        tabBarIconStyle: { display: 'none' },
+        tabBarStyle: { backgroundColor: colors.ground, borderTopWidth: 0, elevation: 0, height: 88 },
+        tabBarItemStyle: { justifyContent: 'center' },
+        sceneStyle: { backgroundColor: colors.ground },
       }}
     >
-      <Tab.Screen
-        name="Home"
-        options={{ tabBarIcon: ({ focused }) => <TabLabel label="Home" focused={focused} /> }}
-      >
-        {(props) => <HomeScreen {...props} user={user} />}
-      </Tab.Screen>
-
-      <Tab.Screen
-        name="Together"
-        component={HarborScreen}
-        options={{ tabBarIcon: ({ focused }) => <TabLabel label="Together" focused={focused} /> }}
-      />
-
-      <Tab.Screen
-        name="Record"
-        options={{ tabBarIcon: ({ focused }) => <TabLabel label="Record" focused={focused} /> }}
-      >
-        {(props) => <LogbookScreen {...props} user={user} />}
-      </Tab.Screen>
+      <Tab.Screen name="ThisWeek" options={tab('This week')}>{(p) => <ThisWeekScreen {...p} user={user} />}</Tab.Screen>
+      <Tab.Screen name="Witnessing" options={tab('Witnessing')}>{(p) => <WitnessingScreen {...p} user={user} />}</Tab.Screen>
+      <Tab.Screen name="History" options={tab('History')}>{(p) => <HistoryScreen {...p} user={user} />}</Tab.Screen>
     </Tab.Navigator>
   );
 }
 
-function SplashScreen() {
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-      <Image
-        source={SPLASH_IMAGE}
-        style={{ width: W, height: W * 1.05 }}
-        resizeMode="contain"
-      />
-      <View style={{ position: 'absolute', bottom: 70, alignItems: 'center', gap: 10 }}>
-        <Text style={{
-          fontFamily: fonts.bold,
-          fontSize: 36,
-          color: colors.text,
-          letterSpacing: 10,
-        }}>
-          piers
-        </Text>
-        <ActivityIndicator color={colors.textDim} style={{ opacity: 0.5 }} />
-      </View>
-    </View>
-  );
-}
-
 export default function App() {
-  const [fontsLoaded] = useFonts({
-    Raleway_300Light,
-    Raleway_400Regular,
-    Raleway_400Regular_Italic,
-    Raleway_600SemiBold,
-    Raleway_700Bold,
-    Raleway_700Bold_Italic,
-  });
-
   const { user, loading, createUser } = useUser();
+  const [fontsLoaded] = useFonts({ InstrumentSans_400Regular, InstrumentSans_600SemiBold });
 
-  if (!fontsLoaded || loading) {
-    return (
-      <>
-        <StatusBar style="dark" />
-        <SplashScreen />
-      </>
-    );
-  }
-
-  if (!user) {
-    return (
-      <>
-        <StatusBar style="dark" />
-        <OnboardingFlow onCreated={createUser} />
-      </>
-    );
-  }
-
-  return (
-    <>
-      <StatusBar style="light" />
+  let body;
+  if (!fontsLoaded || loading) body = <View style={{ flex: 1, backgroundColor: colors.ground }} />;
+  else if (!user) body = <OnboardingScreen onCreated={createUser} />;
+  else {
+    body = (
       <NavigationContainer>
-        <Stack.Navigator screenOptions={stackOptions}>
-          <Stack.Screen name="Tabs">
-            {(props) => <Tabs {...props} user={user} />}
-          </Stack.Screen>
-          <Stack.Screen name="CastOff">
-            {(props) => <CastOffScreen {...props} user={user} />}
-          </Stack.Screen>
-          <Stack.Screen name="MyVoyage">
-            {(props) => <MyVoyageScreen {...props} user={user} />}
-          </Stack.Screen>
-          <Stack.Screen name="JoinPier">
-            {(props) => <JoinPierScreen {...props} user={user} />}
-          </Stack.Screen>
-          <Stack.Screen name="PierWatch">
-            {(props) => <PierWatchScreen {...props} user={user} />}
-          </Stack.Screen>
-          <Stack.Screen
-            name="Reckoning"
-            component={ReckoningScreen}
-            options={{ animation: 'slide_from_bottom' }}
-          />
+        <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.ground } }}>
+          <Stack.Screen name="Tabs">{(p) => <Tabs {...p} user={user} />}</Stack.Screen>
+          <Stack.Screen name="SetGoal" component={SetGoalScreen} />
+          <Stack.Screen name="FriendWeek">{(p) => <FriendWeekScreen {...p} user={user} />}</Stack.Screen>
+          <Stack.Screen name="EndWeek" component={EndWeekScreen} />
+          <Stack.Screen name="JoinCode" component={JoinCodeScreen} />
         </Stack.Navigator>
       </NavigationContainer>
-    </>
+    );
+  }
+
+  return (
+    <SafeAreaProvider>
+      <StatusBar style="dark" />
+      {body}
+    </SafeAreaProvider>
   );
 }
