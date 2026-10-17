@@ -23,6 +23,33 @@ export const colors = {
 
 export const radius = { sm: 8, md: 14, lg: 20 };
 
+// Bonds deepen the longer two people stand on the same pier together.
+// Stranger → Familiar → Confidant. Each tier unlocks a more human interaction.
+export const bondTiers = {
+  stranger: {
+    label: 'Stranger',
+    color: '#8a857e',
+    bg: 'rgba(138,133,126,0.10)',
+    border: 'rgba(138,133,126,0.24)',
+    blurb: 'You\'re standing here for the first time.',
+    lockedHint: 'Stand together once more, through to acknowledgement, to unlock writing your own words.',
+  },
+  familiar: {
+    label: 'Familiar',
+    color: colors.blue,
+    bg: colors.blueBg,
+    border: colors.blueBorder,
+    blurb: 'You\'ve stood together before — you can write in your own words now.',
+  },
+  confidant: {
+    label: 'Confidant',
+    color: colors.gold,
+    bg: colors.goldBg,
+    border: colors.goldBorder,
+    blurb: 'You\'ve shown up for them enough times that they trust you with the fuller picture.',
+  },
+};
+
 export const fonts = {
   regular: 'Raleway_400Regular',
   italic: 'Raleway_400Regular_Italic',

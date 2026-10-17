@@ -162,7 +162,7 @@ export default function LogbookScreen({ user }) {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 22, paddingTop: 64, gap: 24, paddingBottom: 48 },
+  content: { padding: 22, paddingTop: 64, gap: 24, paddingBottom: 124 },
   center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
 
   heading: { gap: 6 },

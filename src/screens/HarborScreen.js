@@ -108,7 +108,7 @@ export default function HarborScreen({ navigation }) {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 22, paddingTop: 64, paddingBottom: 48, gap: 28 },
+  content: { padding: 22, paddingTop: 64, paddingBottom: 124, gap: 28 },
   center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
 
   heading: { gap: 6 },

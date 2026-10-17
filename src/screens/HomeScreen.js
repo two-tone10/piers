@@ -1,13 +1,15 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet,
+  View, Text, ScrollView, TouchableOpacity, Pressable, StyleSheet,
   RefreshControl, ActivityIndicator, Alert, Modal, Image,
-  Dimensions,
+  Dimensions, Animated,
 } from 'react-native';
-import { colors, radius, fonts } from '../lib/theme';
+import Svg, { Defs, LinearGradient, Stop, Rect, Path } from 'react-native-svg';
+import { colors, radius, fonts, bondTiers } from '../lib/theme';
 import {
   getMyVoyage, getOpenVoyages, getPierMembers,
-  getActiveMemberships, seedOpenVoyages, seedPierMembers,
+  getActiveMemberships, seedOpenVoyages, seedPierMembers, getBondLevel,
+  getStreak, devAddCompletedVoyage,
 } from '../lib/supabase';
 
 const IMAGES = {
@@ -54,32 +56,135 @@ function StatusPill({ label, color }) {
   );
 }
 
+function WeekProgress({ createdAt, expiresAt }) {
+  const total = new Date(expiresAt) - new Date(createdAt);
+  const elapsed = Date.now() - new Date(createdAt);
+  const daysDone = Math.min(7, Math.max(0, Math.floor((elapsed / total) * 7)));
+  return (
+    <View style={s.weekRow}>
+      {Array.from({ length: 7 }).map((_, i) => (
+        <View key={i} style={[s.weekSeg, i < daysDone && s.weekSegDone]} />
+      ))}
+    </View>
+  );
+}
+
+function HeroFade({ height }) {
+  return (
+    <Svg width={SCREEN_W} height={height} style={s.heroFadeSvg}>
+      <Defs>
+        <LinearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor={colors.bgCard} stopOpacity={0} />
+          <Stop offset="0.55" stopColor={colors.bgCard} stopOpacity={0.75} />
+          <Stop offset="1" stopColor={colors.bgCard} stopOpacity={1} />
+        </LinearGradient>
+      </Defs>
+      <Rect x={0} y={0} width={SCREEN_W} height={height} fill="url(#fade)" />
+    </Svg>
+  );
+}
+
+function FlameIcon({ color, size = 13 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M12,2 C9,6 6,9 6,13.5 C6,17.6 8.7,21 12,21 C15.3,21 18,17.6 18,13.5 C18,9 15,6 12,2 Z"
+        stroke={color} strokeWidth={1.7} fill={color} fillOpacity={0.16}
+      />
+    </Svg>
+  );
+}
+
+function BondNode({ membership, bond, onPress }) {
+  const tier = bondTiers[bond?.level ?? 'stranger'];
+  const size = bond?.level === 'confidant' ? 62 : bond?.level === 'familiar' ? 54 : 46;
+  const handle = membership.piers_voyages?.piers_users?.handle ?? '';
+  return (
+    <TouchableOpacity style={s.nodeWrap} onPress={onPress} activeOpacity={0.8}>
+      <View
+        style={[
+          s.node,
+          {
+            width: size, height: size, borderRadius: size / 2,
+            borderColor: tier.color, backgroundColor: tier.bg,
+          },
+          bond?.level === 'confidant' && s.nodeGlow,
+        ]}
+      >
+        <Text style={[s.nodeInitial, { color: tier.color, fontSize: size * 0.36 }]}>
+          {handle.charAt(0).toUpperCase()}
+        </Text>
+      </View>
+      <Text style={s.nodeHandle} numberOfLines={1}>@{handle}</Text>
+      <Text style={[s.nodeTier, { color: tier.color }]}>{tier.label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function PressableCard({ style, onPress, children }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const onPressIn = () => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 40 }).start();
+  const onPressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start();
+  return (
+    <Pressable onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
+      <Animated.View style={[style, { transform: [{ scale }] }]}>
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+}
+
 export default function HomeScreen({ user, navigation }) {
   const [myVoyage, setMyVoyage] = useState(null);
   const [pierMembers, setPierMembers] = useState([]);
   const [openVoyages, setOpenVoyages] = useState([]);
   const [memberships, setMemberships] = useState([]);
+  const [bonds, setBonds] = useState({});
+  const [streak, setStreak] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [devVisible, setDevVisible] = useState(false);
   const [seeding, setSeeding] = useState(false);
 
+  const heroAnim = useRef(new Animated.Value(0)).current;
+  const listAnim = useRef(new Animated.Value(0)).current;
+
   const load = useCallback(async () => {
     try {
-      const [voyage, open, mems] = await Promise.all([
+      const [voyage, open, mems, streakCount] = await Promise.all([
         getMyVoyage(user.id),
         getOpenVoyages(user.id),
         getActiveMemberships(user.id),
+        getStreak(user.id),
       ]);
       setMyVoyage(voyage);
       setOpenVoyages(open);
       setMemberships(mems);
+      setStreak(streakCount);
       if (voyage) setPierMembers(await getPierMembers(voyage.id));
+
+      const bondEntries = await Promise.all(
+        mems.map(async (m) => {
+          const goalSetterId = m.piers_voyages?.user_id;
+          try { return [m.id, await getBondLevel(goalSetterId, user.id)]; }
+          catch { return [m.id, null]; }
+        })
+      );
+      setBonds(Object.fromEntries(bondEntries));
     } catch (e) { console.error(e); }
   }, [user.id]);
 
   useEffect(() => { load().finally(() => setLoading(false)); }, [load]);
   useEffect(() => { const u = navigation.addListener('focus', load); return u; }, [navigation, load]);
+
+  useEffect(() => {
+    if (!loading) {
+      Animated.stagger(90, [
+        Animated.timing(heroAnim, { toValue: 1, duration: 480, useNativeDriver: true }),
+        Animated.timing(listAnim, { toValue: 1, duration: 480, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [loading]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -102,6 +207,13 @@ export default function HomeScreen({ user, navigation }) {
     finally { setSeeding(false); }
   }
 
+  async function devAddStreak() {
+    setSeeding(true);
+    try { await devAddCompletedVoyage(user.id); await load(); setDevVisible(false); }
+    catch (e) { Alert.alert('Failed', e.message); }
+    finally { setSeeding(false); }
+  }
+
   if (loading) return <View style={s.center}><ActivityIndicator color={colors.gold} /></View>;
 
   const needsReckoning = myVoyage && ['returned', 'lost'].includes(myVoyage.status) && !myVoyage.reckoning_at;
@@ -118,7 +230,15 @@ export default function HomeScreen({ user, navigation }) {
       >
         {/* ── HEADER ── */}
         <View style={s.header}>
-          <Text style={s.wordmark}>Piers</Text>
+          <View style={s.wordmarkRow}>
+            <Text style={s.wordmark}>Piers</Text>
+            {streak > 0 && (
+              <View style={s.streakChip}>
+                <FlameIcon color={colors.gold} />
+                <Text style={s.streakText}>{streak}</Text>
+              </View>
+            )}
+          </View>
           <View style={s.headerRight}>
             <Text style={s.handle}>@{user.handle}</Text>
             <TouchableOpacity style={s.devBtn} onPress={() => setDevVisible(true)}>
@@ -146,68 +266,76 @@ export default function HomeScreen({ user, navigation }) {
         )}
 
         {/* ── HERO CARD ── */}
-        {hasActiveGoal ? (
-          <TouchableOpacity
-            style={s.heroCard}
-            onPress={() => navigation.navigate('MyVoyage', { voyage: myVoyage, pierMembers })}
-            activeOpacity={0.88}
-          >
-            <Image source={pierImage(pierMembers.length)} style={s.heroImage} resizeMode="cover" />
-            <View style={s.heroFade} />
-            <View style={s.heroContent}>
-              {(() => {
-                const elapsed = Math.min(1, Math.max(0,
-                  (Date.now() - new Date(myVoyage.created_at)) /
-                  (new Date(myVoyage.expires_at) - new Date(myVoyage.created_at))
-                ));
-                return (
-                  <View style={s.progressTrack}>
-                    <View style={[s.progressFill, { width: `${elapsed * 100}%` }]} />
-                  </View>
-                );
-              })()}
-              <View style={s.heroTopRow}>
-                <StatusPill
-                  label={isUnderway ? 'Underway' : 'Seeking support'}
-                  color={isUnderway ? colors.gold : colors.blue}
-                />
-                <Text style={s.heroTimer}>{timeLeft(myVoyage.expires_at)}</Text>
+        <Animated.View style={{
+          opacity: heroAnim,
+          transform: [{ translateY: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+        }}>
+          {hasActiveGoal ? (
+            <PressableCard
+              style={s.heroCard}
+              onPress={() => navigation.navigate('MyVoyage', { voyage: myVoyage, pierMembers })}
+            >
+              <Image source={pierImage(pierMembers.length)} style={s.heroImage} resizeMode="cover" />
+              <HeroFade height={90} />
+              <View style={s.heroContent}>
+                <WeekProgress createdAt={myVoyage.created_at} expiresAt={myVoyage.expires_at} />
+                <View style={s.heroTopRow}>
+                  <StatusPill
+                    label={isUnderway ? 'Underway' : 'Seeking support'}
+                    color={isUnderway ? colors.gold : colors.blue}
+                  />
+                  <Text style={s.heroTimer}>{timeLeft(myVoyage.expires_at)}</Text>
+                </View>
+                <Text style={s.heroGoal}>{myVoyage.goal}</Text>
+                <View style={s.heroBottom}>
+                  <PierDots filled={pierMembers.length} />
+                  <Text style={s.heroViewCta}>View pier →</Text>
+                </View>
               </View>
-              <Text style={s.heroGoal}>{myVoyage.goal}</Text>
-              <View style={s.heroBottom}>
-                <PierDots filled={pierMembers.length} />
-                <Text style={s.heroViewCta}>View pier →</Text>
+            </PressableCard>
+          ) : (
+            <PressableCard style={s.heroCard} onPress={() => navigation.navigate('CastOff')}>
+              <Image source={IMAGES.splash} style={s.heroImage} resizeMode="cover" />
+              <HeroFade height={90} />
+              <View style={s.heroContent}>
+                <Text style={s.castOffEyebrow}>This week</Text>
+                <Text style={s.castOffHeadline}>What will you{'\n'}do?</Text>
+                <Text style={s.castOffBody}>
+                  Name it precisely. Name your obstacle.{'\n'}Two strangers will stand witness.
+                </Text>
+                <View style={s.castOffBtn}>
+                  <Text style={s.castOffBtnText}>Cast off →</Text>
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={s.heroCard}
-            onPress={() => navigation.navigate('CastOff')}
-            activeOpacity={0.88}
-          >
-            <Image source={IMAGES.splash} style={s.heroImage} resizeMode="cover" />
-            <View style={s.heroFade} />
-            <View style={s.heroContent}>
-              <Text style={s.castOffEyebrow}>This week</Text>
-              <Text style={s.castOffHeadline}>What will you{'\n'}do?</Text>
-              <Text style={s.castOffBody}>
-                Name it precisely. Name your obstacle.{'\n'}Two strangers will stand witness.
-              </Text>
-              <View style={s.castOffBtn}>
-                <Text style={s.castOffBtnText}>Cast off →</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        )}
+            </PressableCard>
+          )}
+        </Animated.View>
 
         {/* ── STANDING ON ── */}
         {memberships.length > 0 && (
-          <View style={s.section}>
+          <Animated.View style={[s.section, {
+            opacity: listAnim,
+            transform: [{ translateY: listAnim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+          }]}>
             <View style={s.sectionHeader}>
               <Text style={s.sectionLabel}>You're standing on</Text>
               <Text style={s.sectionCount}>{memberships.length} of 3</Text>
             </View>
+            <ScrollView
+              horizontal showsHorizontalScrollIndicator={false}
+              style={s.nodesRow} contentContainerStyle={s.nodesRowContent}
+            >
+              {memberships.map((m) => (
+                m.piers_voyages && (
+                  <BondNode
+                    key={m.id}
+                    membership={m}
+                    bond={bonds[m.id]}
+                    onPress={() => navigation.navigate('PierWatch', { membership: m })}
+                  />
+                )
+              ))}
+            </ScrollView>
             <View style={s.groupCard}>
               {memberships.map((m, idx) => {
                 const v = m.piers_voyages;
@@ -227,7 +355,16 @@ export default function HomeScreen({ user, navigation }) {
                     <View style={[s.accentBar, { backgroundColor: accentColor }]} />
                     <View style={s.groupBody}>
                       <View style={s.groupTop}>
-                        <Text style={[s.groupHandle, { color: accentColor }]}>@{v.piers_users?.handle}</Text>
+                        <View style={s.groupHandleRow}>
+                          <Text style={[s.groupHandle, { color: accentColor }]}>@{v.piers_users?.handle}</Text>
+                          {bonds[m.id] && (
+                            <View style={[s.bondChip, { borderColor: bondTiers[bonds[m.id].level].border, backgroundColor: bondTiers[bonds[m.id].level].bg }]}>
+                              <Text style={[s.bondChipText, { color: bondTiers[bonds[m.id].level].color }]}>
+                                {bondTiers[bonds[m.id].level].label}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
                         <Text style={[s.groupStatus, { color: accentColor + 'aa' }]}>{statusLabel}</Text>
                       </View>
                       <Text style={s.groupGoal} numberOfLines={2}>{v.goal}</Text>
@@ -242,7 +379,7 @@ export default function HomeScreen({ user, navigation }) {
                 + {3 - memberships.length} more pier{3 - memberships.length > 1 ? 's' : ''} available
               </Text>
             )}
-          </View>
+          </Animated.View>
         )}
 
         {/* ── OPEN VOYAGES ── */}
@@ -293,6 +430,9 @@ export default function HomeScreen({ user, navigation }) {
             <TouchableOpacity style={[s.sheetBtn, { backgroundColor: colors.blue }]} onPress={devFillPier} disabled={seeding}>
               {seeding ? <ActivityIndicator color={colors.bg} /> : <Text style={s.sheetBtnText}>Fill my pier with 2 fake supporters</Text>}
             </TouchableOpacity>
+            <TouchableOpacity style={[s.sheetBtn, { backgroundColor: colors.text }]} onPress={devAddStreak} disabled={seeding}>
+              {seeding ? <ActivityIndicator color={colors.bg} /> : <Text style={s.sheetBtnText}>+1 completed voyage (streak)</Text>}
+            </TouchableOpacity>
             <TouchableOpacity style={s.sheetCancel} onPress={() => setDevVisible(false)}>
               <Text style={s.sheetCancelText}>Close</Text>
             </TouchableOpacity>
@@ -308,14 +448,21 @@ const CARD_RADIUS = 20;
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { paddingTop: 56, paddingBottom: 52, gap: 32 },
+  content: { paddingTop: 56, paddingBottom: 128, gap: 32 },
   center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
 
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: 22,
   },
+  wordmarkRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   wordmark: { fontFamily: fonts.bold, fontSize: 28, color: colors.gold, letterSpacing: 0.8 },
+  streakChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.goldBg, borderWidth: 1, borderColor: colors.goldBorder,
+    borderRadius: 99, paddingHorizontal: 9, paddingVertical: 4, marginTop: 2,
+  },
+  streakText: { fontFamily: fonts.semiBold, fontSize: 12, color: colors.gold },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   handle: { fontFamily: fonts.light, fontSize: 13, color: colors.textMid },
   devBtn: {
@@ -343,27 +490,26 @@ const s = StyleSheet.create({
     borderRadius: CARD_RADIUS,
     borderWidth: 1, borderColor: colors.borderStrong,
     overflow: 'hidden',
+    shadowColor: '#1a1714', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.10, shadowRadius: 18, elevation: 4,
   },
   heroImage: {
     width: '100%',
     height: HERO_IMAGE_H,
     backgroundColor: colors.bgCard,
   },
-  heroFade: {
+  heroFadeSvg: {
     position: 'absolute',
-    top: HERO_IMAGE_H - 70,
+    top: HERO_IMAGE_H - 90,
     left: 0, right: 0,
-    height: 90,
-    backgroundColor: 'rgba(230,225,216,0.94)',
   },
   heroContent: { padding: 22, paddingTop: 16, gap: 14 },
-  progressTrack: {
-    height: 2, backgroundColor: colors.border,
-    borderRadius: 1, overflow: 'hidden',
+  weekRow: { flexDirection: 'row', gap: 4 },
+  weekSeg: {
+    flex: 1, height: 3, borderRadius: 2,
+    backgroundColor: colors.border,
   },
-  progressFill: {
-    height: '100%', backgroundColor: colors.gold, borderRadius: 1,
-  },
+  weekSegDone: { backgroundColor: colors.gold },
   heroTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   heroTimer: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
   heroGoal: { fontFamily: fonts.regular, fontSize: 20, color: colors.text, lineHeight: 30 },
@@ -401,6 +547,18 @@ const s = StyleSheet.create({
   },
   sectionCount: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
 
+  nodesRow: { marginBottom: 16 },
+  nodesRowContent: { gap: 18, paddingHorizontal: 2 },
+  nodeWrap: { alignItems: 'center', width: 68, gap: 5 },
+  node: { borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  nodeGlow: {
+    shadowColor: colors.gold, shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45, shadowRadius: 10, elevation: 5,
+  },
+  nodeInitial: { fontFamily: fonts.bold },
+  nodeHandle: { fontFamily: fonts.semiBold, fontSize: 11, color: colors.text },
+  nodeTier: { fontFamily: fonts.regular, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4 },
+
   groupCard: {
     borderWidth: 1, borderColor: colors.borderStrong,
     borderRadius: radius.md,
@@ -415,7 +573,10 @@ const s = StyleSheet.create({
   accentBar: { width: 3, height: 38, borderRadius: 2 },
   groupBody: { flex: 1, gap: 5 },
   groupTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  groupHandleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   groupHandle: { fontFamily: fonts.semiBold, fontSize: 14 },
+  bondChip: { borderWidth: 1, borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2 },
+  bondChipText: { fontFamily: fonts.semiBold, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5 },
   groupStatus: { fontFamily: fonts.regular, fontSize: 11 },
   groupGoal: { fontFamily: fonts.regular, fontSize: 14, color: colors.text, lineHeight: 20 },
   groupArrow: { fontFamily: fonts.semiBold, fontSize: 16, color: colors.textDim },

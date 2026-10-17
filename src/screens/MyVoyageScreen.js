@@ -3,8 +3,9 @@ import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { colors, radius, fonts } from '../lib/theme';
-import { sailHome, sendPulse, getPulses, PULSE_OPTIONS } from '../lib/supabase';
+import { colors, radius, fonts, bondTiers } from '../lib/theme';
+import { sailHome, sendPulse, getPulses, PULSE_OPTIONS, getBondLevel } from '../lib/supabase';
+import { showToast } from '../components/Toast';
 
 function timeLeft(expiresAt) {
   const diff = new Date(expiresAt) - Date.now();
@@ -41,6 +42,7 @@ export default function MyVoyageScreen({ route, navigation, user }) {
   const [tab, setTab] = useState('pier');
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [pulseNote, setPulseNote] = useState('');
+  const [bonds, setBonds] = useState({});
 
   const loadPulses = useCallback(async () => {
     try {
@@ -54,6 +56,20 @@ export default function MyVoyageScreen({ route, navigation, user }) {
   }, [voyage.id]);
 
   useEffect(() => { loadPulses(); }, [loadPulses]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        pierMembers.map(async (m) => {
+          try { return [m.id, await getBondLevel(user.id, m.user_id)]; }
+          catch { return [m.id, null]; }
+        })
+      );
+      if (!cancelled) setBonds(Object.fromEntries(entries));
+    })();
+    return () => { cancelled = true; };
+  }, [pierMembers, user.id]);
 
   const todaysPulse = pulses.find((p) => p.date_key === todayKey());
 
@@ -87,6 +103,7 @@ export default function MyVoyageScreen({ route, navigation, user }) {
     try {
       await sailHome(voyage.id);
       navigation.goBack();
+      showToast('Marked complete. Your pier can now acknowledge you.');
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
@@ -139,7 +156,16 @@ export default function MyVoyageScreen({ route, navigation, user }) {
             ) : (
               pierMembers.map((m) => (
                 <View key={m.id} style={styles.memberRow}>
-                  <Text style={styles.memberHandle}>@{m.piers_users?.handle}</Text>
+                  <View style={styles.memberTop}>
+                    <Text style={styles.memberHandle}>@{m.piers_users?.handle}</Text>
+                    {bonds[m.id] && (
+                      <View style={[styles.bondChip, { borderColor: bondTiers[bonds[m.id].level].border, backgroundColor: bondTiers[bonds[m.id].level].bg }]}>
+                        <Text style={[styles.bondChipText, { color: bondTiers[bonds[m.id].level].color }]}>
+                          {bondTiers[bonds[m.id].level].label}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={styles.memberJoined}>Standing since {new Date(m.joined_at).toLocaleDateString()}</Text>
                 </View>
               ))
@@ -320,8 +346,11 @@ const styles = StyleSheet.create({
   tabText: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid },
   tabTextActive: { fontFamily: fonts.semiBold, color: colors.gold },
 
-  memberRow: { backgroundColor: colors.bgCard, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 2 },
+  memberRow: { backgroundColor: colors.bgCard, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 4 },
+  memberTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   memberHandle: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.text },
+  bondChip: { borderWidth: 1, borderRadius: 99, paddingHorizontal: 7, paddingVertical: 2 },
+  bondChipText: { fontFamily: fonts.semiBold, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5 },
   memberJoined: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
   waitingNotice: { backgroundColor: colors.goldBg, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.goldBorder, padding: 14 },
   waitingText: { fontFamily: fonts.regular, fontSize: 13, color: colors.gold },

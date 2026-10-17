@@ -2,11 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, ActivityIndicator, Alert, KeyboardAvoidingView,
-  Platform, Dimensions,
+  Platform, Dimensions, Modal,
 } from 'react-native';
-import { colors, radius, fonts } from '../lib/theme';
-import { sendSignal, acknowledge, getPulses, respondToPulse, getPierMembers, RESPONSE_WORDS } from '../lib/supabase';
+import { colors, radius, fonts, bondTiers } from '../lib/theme';
+import {
+  sendSignal, acknowledge, getPulses, respondToPulse, getPierMembers, RESPONSE_WORDS,
+  getBondLevel, getTrackRecord, devDeepenBond,
+} from '../lib/supabase';
 import PierScene from '../components/PierScene';
+import { showToast } from '../components/Toast';
 
 const { width: W } = Dimensions.get('window');
 
@@ -49,26 +53,48 @@ export default function PierWatchScreen({ route, navigation, user }) {
   const [sendingAck, setSendingAck] = useState(false);
   const [respondingPulseId, setRespondingPulseId] = useState(null);
   const [tab, setTab] = useState('signals');
+  const [bond, setBond] = useState(null);
+  const [trackRecord, setTrackRecord] = useState(null);
+  const [devVisible, setDevVisible] = useState(false);
+  const [deepening, setDeepening] = useState(false);
 
   const voyageEnded = ['returned', 'lost'].includes(voyage?.status);
 
   const load = useCallback(async () => {
     if (!voyage) return;
     try {
-      const [pulseData, memberData] = await Promise.all([
+      const [pulseData, memberData, bondData] = await Promise.all([
         getPulses(voyage.id),
         getPierMembers(voyage.id),
+        getBondLevel(voyage.user_id, user.id),
       ]);
       setPulses(pulseData);
       setPierMembers(memberData);
+      setBond(bondData);
+      if (bondData.level === 'confidant') {
+        setTrackRecord(await getTrackRecord(voyage.user_id));
+      }
     } catch (e) {
       console.error(e);
     } finally {
       setLoadingPulses(false);
     }
-  }, [voyage?.id]);
+  }, [voyage?.id, voyage?.user_id, user.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleDeepenBond() {
+    setDeepening(true);
+    try {
+      await devDeepenBond({ goalSetterId: voyage.user_id, supporterId: user.id });
+      await load();
+      setDevVisible(false);
+    } catch (e) {
+      Alert.alert('Failed', e.message);
+    } finally {
+      setDeepening(false);
+    }
+  }
 
   async function handleSendSignal(quote, author) {
     setSendingSignal(true);
@@ -101,9 +127,8 @@ export default function PierWatchScreen({ route, navigation, user }) {
     setSendingAck(true);
     try {
       await acknowledge({ voyageId: voyage.id, userId: user.id, text: ackText.trim() });
-      Alert.alert('Done', 'Your words have reached them.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      navigation.goBack();
+      showToast('Your words have reached them.');
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
@@ -133,9 +158,14 @@ export default function PierWatchScreen({ route, navigation, user }) {
       <ScrollView contentContainerStyle={st.content} keyboardShouldPersistTaps="handled">
 
         {/* Back */}
-        <TouchableOpacity onPress={() => navigation.goBack()} style={st.back}>
-          <Text style={st.backText}>← Back</Text>
-        </TouchableOpacity>
+        <View style={st.topRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Text style={st.backText}>← Back</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={st.devBtn} onPress={() => setDevVisible(true)}>
+            <Text style={st.devBtnText}>Dev</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Pier illustration */}
         <View style={st.illustration}>
@@ -155,6 +185,45 @@ export default function PierWatchScreen({ route, navigation, user }) {
             </Text>
           )}
         </View>
+
+        {/* Bond — how well you two know each other by now */}
+        {bond && (
+          <View style={[st.bondCard, { borderColor: bondTiers[bond.level].border, backgroundColor: bondTiers[bond.level].bg }]}>
+            <View style={st.bondTop}>
+              <View style={st.bondTallyRow}>
+                {[0, 1, 2].map((i) => (
+                  <View
+                    key={i}
+                    style={[
+                      st.bondDot,
+                      { borderColor: bondTiers[bond.level].color },
+                      i < bond.count && { backgroundColor: bondTiers[bond.level].color },
+                    ]}
+                  />
+                ))}
+              </View>
+              <Text style={[st.bondLabel, { color: bondTiers[bond.level].color }]}>{bondTiers[bond.level].label}</Text>
+            </View>
+            <Text style={st.bondBlurb}>{bondTiers[bond.level].blurb}</Text>
+            {bond.next && (
+              <Text style={st.bondUnlock}>
+                {bond.remaining} more voyage{bond.remaining === 1 ? '' : 's'} together to become {bondTiers[bond.next].label.toLowerCase()}.
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* Confidant-only — the fuller picture */}
+        {bond?.level === 'confidant' && trackRecord && (
+          <View style={st.recordCard}>
+            <Text style={st.recordLabel}>Their track record</Text>
+            <Text style={st.recordText}>
+              @{handle} has returned from {trackRecord.returned} of {trackRecord.total} voyages
+              {trackRecord.rate !== null ? ` — a ${trackRecord.rate}% record` : ''}. You've earned enough
+              trust to see that.
+            </Text>
+          </View>
+        )}
 
         {/* Goal card */}
         <View style={st.goalCard}>
@@ -223,28 +292,35 @@ export default function PierWatchScreen({ route, navigation, user }) {
                   </TouchableOpacity>
                 ))}
 
-                <View style={st.card}>
-                  <Text style={st.cardLabel}>Or write your own</Text>
-                  <TextInput
-                    style={st.input} placeholder="A quote, a line, a word..."
-                    placeholderTextColor={colors.textDim} value={customQuote}
-                    onChangeText={setCustomQuote} multiline maxLength={500}
-                  />
-                  <TextInput
-                    style={[st.input, st.inputSm]} placeholder="Attribution (optional)"
-                    placeholderTextColor={colors.textDim} value={customAuthor}
-                    onChangeText={setCustomAuthor} maxLength={160}
-                  />
-                  <TouchableOpacity
-                    style={[st.btnSmall, (sendingSignal || !customQuote.trim()) && st.btnDisabled]}
-                    onPress={() => handleSendSignal(customQuote, customAuthor)}
-                    disabled={sendingSignal || !customQuote.trim()}
-                  >
-                    {sendingSignal
-                      ? <ActivityIndicator color={colors.bg} size="small" />
-                      : <Text style={st.btnSmallText}>Send signal</Text>}
-                  </TouchableOpacity>
-                </View>
+                {bond && bond.level === 'stranger' ? (
+                  <View style={st.lockedCard}>
+                    <Text style={st.lockedTitle}>Writing your own words is locked</Text>
+                    <Text style={st.lockedBody}>{bondTiers.stranger.lockedHint}</Text>
+                  </View>
+                ) : (
+                  <View style={st.card}>
+                    <Text style={st.cardLabel}>Or write your own</Text>
+                    <TextInput
+                      style={st.input} placeholder="A quote, a line, a word..."
+                      placeholderTextColor={colors.textDim} value={customQuote}
+                      onChangeText={setCustomQuote} multiline maxLength={500}
+                    />
+                    <TextInput
+                      style={[st.input, st.inputSm]} placeholder="Attribution (optional)"
+                      placeholderTextColor={colors.textDim} value={customAuthor}
+                      onChangeText={setCustomAuthor} maxLength={160}
+                    />
+                    <TouchableOpacity
+                      style={[st.btnSmall, (sendingSignal || !customQuote.trim()) && st.btnDisabled]}
+                      onPress={() => handleSendSignal(customQuote, customAuthor)}
+                      disabled={sendingSignal || !customQuote.trim()}
+                    >
+                      {sendingSignal
+                        ? <ActivityIndicator color={colors.bg} size="small" />
+                        : <Text style={st.btnSmallText}>Send signal</Text>}
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             ) : signals.length === 0 ? (
               <Text style={st.empty}>No signals were sent during this voyage.</Text>
@@ -350,6 +426,27 @@ export default function PierWatchScreen({ route, navigation, user }) {
           </View>
         )}
       </ScrollView>
+
+      {/* Dev: age up the bond to preview the next tier */}
+      <Modal visible={devVisible} transparent animationType="slide">
+        <TouchableOpacity style={st.overlay} activeOpacity={1} onPress={() => setDevVisible(false)}>
+          <View style={st.sheet}>
+            <View style={st.sheetHandle} />
+            <Text style={st.sheetTitle}>Dev Tools</Text>
+            <Text style={st.sheetSub}>
+              Simulate a past voyage stood together, so the bond with @{handle} deepens.
+            </Text>
+            <TouchableOpacity style={st.sheetBtn} onPress={handleDeepenBond} disabled={deepening}>
+              {deepening
+                ? <ActivityIndicator color={colors.bg} />
+                : <Text style={st.sheetBtnText}>+1 shared voyage (deepen bond)</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={st.sheetCancel} onPress={() => setDevVisible(false)}>
+              <Text style={st.sheetCancelText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -359,8 +456,16 @@ const st = StyleSheet.create({
   content: { paddingBottom: 48, gap: 20 },
   center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center' },
 
-  back: { paddingHorizontal: 22, paddingTop: 58, marginBottom: -8 },
+  topRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 22, paddingTop: 58, marginBottom: -8,
+  },
   backText: { fontFamily: fonts.regular, color: colors.textMid, fontSize: 14 },
+  devBtn: {
+    backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 5,
+  },
+  devBtnText: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.textDim, letterSpacing: 0.5 },
 
   illustration: { marginTop: 8 },
 
@@ -368,6 +473,49 @@ const st = StyleSheet.create({
   pierTitle: { fontFamily: fonts.bold, fontSize: 22, color: colors.text, lineHeight: 28 },
   pierTitleHandle: { fontFamily: fonts.boldItalic, color: colors.blue },
   pierCompanions: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
+
+  bondCard: {
+    marginHorizontal: 22,
+    borderRadius: radius.md, borderWidth: 1,
+    padding: 16, gap: 8,
+  },
+  bondTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  bondTallyRow: { flexDirection: 'row', gap: 6 },
+  bondDot: { width: 9, height: 9, borderRadius: 5, borderWidth: 1.5 },
+  bondLabel: { fontFamily: fonts.semiBold, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.9 },
+  bondBlurb: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid, lineHeight: 19 },
+  bondUnlock: { fontFamily: fonts.italic, fontSize: 12, color: colors.textDim },
+
+  lockedCard: {
+    backgroundColor: colors.bgCard, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.border, borderStyle: 'dashed',
+    padding: 16, gap: 4,
+  },
+  lockedTitle: { fontFamily: fonts.semiBold, fontSize: 13, color: colors.textMid },
+  lockedBody: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim, lineHeight: 18 },
+
+  recordCard: {
+    marginHorizontal: 22,
+    backgroundColor: colors.goldBg, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.goldBorder, padding: 18, gap: 8,
+  },
+  recordLabel: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.gold, textTransform: 'uppercase', letterSpacing: 0.9 },
+  recordText: { fontFamily: fonts.regular, fontSize: 14, color: colors.text, lineHeight: 21 },
+
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.bgCard,
+    borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
+    padding: 24, paddingBottom: 44, gap: 12,
+    borderWidth: 1, borderColor: colors.borderStrong,
+  },
+  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.borderStrong, alignSelf: 'center', marginBottom: 4 },
+  sheetTitle: { fontFamily: fonts.bold, fontSize: 20, color: colors.text },
+  sheetSub: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid, marginTop: -4 },
+  sheetBtn: { backgroundColor: colors.gold, borderRadius: radius.md, paddingVertical: 15, alignItems: 'center' },
+  sheetBtnText: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.bg },
+  sheetCancel: { alignItems: 'center', paddingVertical: 8 },
+  sheetCancelText: { fontFamily: fonts.regular, fontSize: 14, color: colors.textDim },
 
   goalCard: {
     marginHorizontal: 22,

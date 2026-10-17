@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
 import { castOff } from '../lib/supabase';
+import { showToast } from '../components/Toast';
 
 export default function CastOffScreen({ route, navigation, user }) {
   const [goal, setGoal] = useState('');
@@ -20,6 +21,7 @@ export default function CastOffScreen({ route, navigation, user }) {
     try {
       await castOff({ userId: user.id, goal: goal.trim(), obstacle: obstacle.trim() });
       navigation.goBack();
+      showToast('Cast off. Your pier awaits.');
     } catch (e) {
       setError(e.message || 'Something went wrong.');
     } finally {

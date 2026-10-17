@@ -196,6 +196,70 @@ export async function respondToPulse({ pulseId, senderId, word }) {
   if (error) throw error;
 }
 
+// ── Bonds — trust that deepens the longer two people stand together ──────────
+
+// A bond is not stored — it's counted. Every voyage where `supporterId` stood
+// on `goalSetterId`'s pier and stayed through acknowledgement adds one mark.
+export function bondTier(count) {
+  if (count >= 3) return { level: 'confidant', count, remaining: 0, next: null };
+  if (count >= 1) return { level: 'familiar', count, remaining: 3 - count, next: 'confidant' };
+  return { level: 'stranger', count, remaining: 1, next: 'familiar' };
+}
+
+export async function getBondLevel(goalSetterId, supporterId) {
+  if (!goalSetterId || !supporterId) return bondTier(0);
+  const { count, error } = await supabase
+    .from('piers_pier_members')
+    .select('id, piers_voyages!inner(user_id)', { count: 'exact', head: true })
+    .eq('user_id', supporterId)
+    .not('acknowledged_at', 'is', null)
+    .eq('piers_voyages.user_id', goalSetterId);
+  if (error) throw error;
+  return bondTier(count || 0);
+}
+
+export async function getTrackRecord(userId) {
+  const { data, error } = await supabase
+    .from('piers_voyages')
+    .select('status')
+    .eq('user_id', userId)
+    .in('status', ['returned', 'lost']);
+  if (error) throw error;
+  const total = data.length;
+  const returned = data.filter((v) => v.status === 'returned').length;
+  return { total, returned, rate: total > 0 ? Math.round((returned / total) * 100) : null };
+}
+
+// Dev-only: backfill a completed, acknowledged voyage between two people so a
+// bond can be watched leveling up in the simulator without waiting a week.
+export async function devDeepenBond({ goalSetterId, supporterId }) {
+  const startedAt = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+  const { data: voyage, error } = await supabase
+    .from('piers_voyages')
+    .insert({
+      user_id: goalSetterId,
+      goal: 'An earlier voyage, stood together.',
+      obstacle: 'Time.',
+      status: 'returned',
+      created_at: startedAt.toISOString(),
+      expires_at: new Date(startedAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      completed_at: new Date(startedAt.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+    })
+    .select().single();
+  if (error) throw error;
+
+  const { error: memErr } = await supabase
+    .from('piers_pier_members')
+    .insert({
+      voyage_id: voyage.id,
+      user_id: supporterId,
+      joined_at: startedAt.toISOString(),
+      acknowledged_at: new Date(startedAt.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+      acknowledgement: 'Glad I got to stand here again.',
+    });
+  if (memErr) throw memErr;
+}
+
 // ── History ───────────────────────────────────────────────────────────────────
 
 export async function getPastVoyages(userId) {
@@ -208,6 +272,38 @@ export async function getPastVoyages(userId) {
     .limit(20);
   if (error) throw error;
   return data || [];
+}
+
+// Dev-only: backfill a completed voyage for the current user to preview streaks.
+export async function devAddCompletedVoyage(userId) {
+  const startedAt = new Date(Date.now() - (8 + Math.random() * 3) * 24 * 60 * 60 * 1000);
+  const { error } = await supabase.from('piers_voyages').insert({
+    user_id: userId,
+    goal: 'An earlier voyage, completed.',
+    obstacle: 'Time.',
+    status: 'returned',
+    created_at: startedAt.toISOString(),
+    expires_at: new Date(startedAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    completed_at: new Date(startedAt.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+  });
+  if (error) throw error;
+}
+
+export async function getStreak(userId) {
+  const { data, error } = await supabase
+    .from('piers_voyages')
+    .select('status, created_at')
+    .eq('user_id', userId)
+    .in('status', ['returned', 'lost'])
+    .order('created_at', { ascending: false })
+    .limit(30);
+  if (error) throw error;
+  let streak = 0;
+  for (const v of data || []) {
+    if (v.status === 'returned') streak++;
+    else break;
+  }
+  return streak;
 }
 
 // ── Dev seeder ────────────────────────────────────────────────────────────────
