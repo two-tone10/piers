@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import { getItem, setItem, deleteItem } from '../lib/kv';
 import { createUser as createUserRpc, getMe, setSessionToken } from '../lib/supabase';
 
 const USER_KEY = 'piers_user';
@@ -11,7 +11,7 @@ export function useUser() {
   useEffect(() => {
     (async () => {
       try {
-        const stored = await SecureStore.getItemAsync(USER_KEY);
+        const stored = await getItem(USER_KEY);
         const token = stored ? JSON.parse(stored)?.session_token : null;
         if (token) {
           const data = await getMe(token);
@@ -19,7 +19,7 @@ export function useUser() {
             setSessionToken(data.session_token);
             setUser(data);
           } else {
-            await SecureStore.deleteItemAsync(USER_KEY);
+            await deleteItem(USER_KEY);
           }
         }
       } catch (_) {}
@@ -29,14 +29,14 @@ export function useUser() {
 
   const createUser = useCallback(async (handle) => {
     const data = await createUserRpc(handle.trim().slice(0, 40));
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(data));
+    await setItem(USER_KEY, JSON.stringify(data));
     setSessionToken(data.session_token);
     setUser(data);
     return data;
   }, []);
 
   const clearUser = useCallback(async () => {
-    await SecureStore.deleteItemAsync(USER_KEY);
+    await deleteItem(USER_KEY);
     setSessionToken(null);
     setUser(null);
   }, []);

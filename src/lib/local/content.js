@@ -64,3 +64,11 @@ export const BOT_ACKS = [
   'You showed up. Every day. That matters.',
   'Proud of you. Truly.',
 ];
+
+export const BOT_NOTES = [
+  'Still with you.',
+  'One day at a time.',
+  'Thinking of you today.',
+  'You said you would. You can.',
+  'Good week so far.',
+];
