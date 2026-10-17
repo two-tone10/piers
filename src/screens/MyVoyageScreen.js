@@ -1,100 +1,112 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform, Share, Linking, Switch,
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
-import { sailHome, sendPulse, getPulses, PULSE_OPTIONS } from '../lib/supabase';
+import {
+  getVoyageDetail, sendPulse, claimDone, goWithOne, setListed, openSupply,
+  PULSE_OPTIONS, PULSE_LABELS, supplyLabel, todayKey,
+} from '../lib/supabase';
 
 function timeLeft(expiresAt) {
   const diff = new Date(expiresAt) - Date.now();
   if (diff <= 0) return 'Expired';
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  if (days > 0) return `${days}d ${hours}h remaining`;
-  return `${hours}h remaining`;
-}
-
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
+  const days = Math.floor(diff / 86400000);
+  const hours = Math.floor((diff % 86400000) / 3600000);
+  return days > 0 ? `${days}d ${hours}h left` : `${hours}h left`;
 }
 
 function formatDate(dateKey) {
-  const d = new Date(dateKey + 'T12:00:00');
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return new Date(dateKey + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-const PULSE_LABELS = {
-  making_progress: 'Making progress.',
-  pushing_through: 'Pushing through.',
-  stayed_the_course: 'Stayed the course.',
-  rough_one: 'Had a rough one.',
-};
+function Responses({ items }) {
+  if (!items?.length) return null;
+  return (
+    <View style={styles.responsesBlock}>
+      {items.map((r, i) => (
+        <Text key={i} style={styles.responseWord}>
+          <Text style={styles.responseHandle}>@{r.handle} </Text>{r.word}
+        </Text>
+      ))}
+    </View>
+  );
+}
 
-export default function MyVoyageScreen({ route, navigation, user }) {
-  const { voyage, pierMembers: initialMembers = [] } = route.params;
-  const [pierMembers] = useState(initialMembers);
-  const [pulses, setPulses] = useState([]);
-  const [loadingPulses, setLoadingPulses] = useState(true);
-  const [sendingPulse, setSendingPulse] = useState(false);
-  const [sailLoading, setSailLoading] = useState(false);
+function SupplyCard({ s, onOpen }) {
+  let body = null;
+  if (s.kind === 'extra_day') body = 'A day was added to your week.';
+  else if (s.kind === 'rest_day') body = 'Use it from your daily pulse.';
+  else if (s.kind === 'sealed_note') body = s.sealed ? 'Sealed. Opens when you finish.' : s.body;
+  else if (s.kind === 'call') body = s.body;
+  return (
+    <View style={[styles.card, s.sealed && styles.cardSealed]}>
+      <View style={styles.historyRow}>
+        <Text style={styles.supplyKind}>{supplyLabel(s.kind)}</Text>
+        <Text style={styles.historyDate}>from {s.from}</Text>
+      </View>
+      {!!body && <Text style={s.sealed ? styles.sealedText : styles.supplyBody}>{body}</Text>}
+      {s.kind === 'link' && !!s.url && (
+        <TouchableOpacity onPress={() => onOpen(s)}>
+          <Text style={styles.link} numberOfLines={1}>{s.url}</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+export default function MyVoyageScreen({ route, navigation }) {
+  const { voyageId } = route.params;
+  const [detail, setDetail] = useState(null);
   const [tab, setTab] = useState('pier');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [pulseNote, setPulseNote] = useState('');
+  const [confirming, setConfirming] = useState(null);
 
-  const loadPulses = useCallback(async () => {
-    try {
-      const data = await getPulses(voyage.id);
-      setPulses(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingPulses(false);
-    }
-  }, [voyage.id]);
+  const load = useCallback(async () => {
+    try { setDetail(await getVoyageDetail(voyageId)); setError(''); }
+    catch (e) { setError(e.message); }
+  }, [voyageId]);
 
-  useEffect(() => { loadPulses(); }, [loadPulses]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const id = setInterval(load, 8000);
+    return () => clearInterval(id);
+  }, [load]);
 
-  const todaysPulse = pulses.find((p) => p.date_key === todayKey());
-
-  async function handleSendPulse(status, note) {
-    setSendingPulse(true);
-    try {
-      await sendPulse({ voyageId: voyage.id, status, note });
-      setSelectedStatus(null);
-      setPulseNote('');
-      await loadPulses();
-    } catch (e) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setSendingPulse(false);
-    }
+  async function run(fn) {
+    setBusy(true);
+    setError('');
+    try { await fn(); await load(); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); setConfirming(null); }
   }
 
-  function confirmReturn() {
-    Alert.alert(
-      'Mark as complete?',
-      'Your pier will be able to acknowledge you.',
-      [
-        { text: 'Not yet', style: 'cancel' },
-        { text: 'I did it', style: 'default', onPress: doSailHome },
-      ]
-    );
+  if (!detail) {
+    return <View style={styles.center}>{error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator color={colors.gold} />}</View>;
   }
 
-  async function doSailHome() {
-    setSailLoading(true);
-    try {
-      await sailHome(voyage.id);
-      navigation.goBack();
-    } catch (e) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setSailLoading(false);
-    }
-  }
-
+  const { voyage, members, pulses, supplies = [], rest_days_left: restsLeft } = detail;
+  const solo = voyage.mode === 'solo';
+  const seats = solo ? 1 : 2;
+  const isOpen = voyage.status === 'open';
   const isUnderway = voyage.status === 'underway';
+  const ended = ['returned', 'lost'].includes(voyage.status);
+  const todaysPulse = pulses.find((p) => p.date_key === todayKey());
+  const earlier = pulses.filter((p) => p.date_key !== todayKey());
+  const options = [...PULSE_OPTIONS, ...(restsLeft > 0 && isUnderway ? [{ key: 'rest_day', label: `Rest day (${restsLeft} left)` }] : [])];
+
+  function sharePier() {
+    Share.share({ message: `Stand on my pier in Piers. Code: ${voyage.invite_code}` }).catch(() => {});
+  }
+
+  function openLink(s) {
+    openSupply(s.id).catch(() => {});
+    Linking.openURL(s.url).catch(() => {});
+  }
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -104,7 +116,10 @@ export default function MyVoyageScreen({ route, navigation, user }) {
         </TouchableOpacity>
 
         <Text style={styles.title}>Your goal</Text>
-        <Text style={styles.timer}>{timeLeft(voyage.expires_at)}</Text>
+        <Text style={styles.timer}>
+          {isOpen ? 'Starts when your pier fills' : ended ? (voyage.status === 'returned' ? 'You made it' : 'The week ended') : timeLeft(voyage.expires_at)}
+          {solo ? ' · Solo' : ''}
+        </Text>
 
         <View style={[styles.card, styles.cardGold]}>
           <Text style={styles.fieldLabel}>Goal</Text>
@@ -116,65 +131,101 @@ export default function MyVoyageScreen({ route, navigation, user }) {
           <Text style={styles.obstacleText}>{voyage.obstacle}</Text>
         </View>
 
-        {/* Tabs */}
         <View style={styles.tabs}>
-          <TouchableOpacity
-            style={[styles.tab, tab === 'pier' && styles.tabActive]}
-            onPress={() => setTab('pier')}
-          >
-            <Text style={[styles.tabText, tab === 'pier' && styles.tabTextActive]}>Your Pier</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, tab === 'pulse' && styles.tabActive]}
-            onPress={() => setTab('pulse')}
-          >
-            <Text style={[styles.tabText, tab === 'pulse' && styles.tabTextActive]}>Daily Pulse</Text>
-          </TouchableOpacity>
+          {[['pier', 'Your Pier'], ['pulse', 'Daily Pulse'], ['supplies', `Supplies${supplies.length ? ` · ${supplies.length}` : ''}`]].map(([k, label]) => (
+            <TouchableOpacity key={k} style={[styles.tab, tab === k && styles.tabActive]} onPress={() => setTab(k)}>
+              <Text style={[styles.tabText, tab === k && styles.tabTextActive]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
+
+        {!!error && <Text style={styles.error}>{error}</Text>}
 
         {tab === 'pier' && (
           <>
-            {pierMembers.length === 0 ? (
-              <Text style={styles.empty}>Your pier is empty. Others will find your goal when they're looking for someone to support.</Text>
-            ) : (
-              pierMembers.map((m) => (
-                <View key={m.id} style={styles.memberRow}>
-                  <Text style={styles.memberHandle}>@{m.piers_users?.handle}</Text>
-                  <Text style={styles.memberJoined}>Standing since {new Date(m.joined_at).toLocaleDateString()}</Text>
-                </View>
-              ))
-            )}
-
-            {pierMembers.length < 2 && (
-              <View style={styles.waitingNotice}>
-                <Text style={styles.waitingText}>
-                  Waiting for {2 - pierMembers.length} more to stand on your pier
-                </Text>
+            {members.map((m) => (
+              <View key={m.user_id} style={styles.memberRow}>
+                <Text style={styles.memberHandle}>@{m.handle}</Text>
+                <Text style={styles.memberJoined}>Standing since {new Date(m.joined_at).toLocaleDateString()}</Text>
               </View>
+            ))}
+
+            {isOpen && (
+              <>
+                <View style={styles.waitingNotice}>
+                  <Text style={styles.waitingText}>
+                    Waiting for {seats - members.length} more to stand on your pier
+                  </Text>
+                </View>
+
+                <View style={styles.card}>
+                  <Text style={styles.fieldLabel}>Pier code</Text>
+                  <Text style={styles.code}>{voyage.invite_code}</Text>
+                  <TouchableOpacity style={styles.btnOutline} onPress={sharePier}>
+                    <Text style={styles.btnOutlineText}>Share code</Text>
+                  </TouchableOpacity>
+                  <View style={styles.switchRow}>
+                    <Text style={styles.switchLabel}>Open water</Text>
+                    <Switch
+                      value={!!voyage.listed}
+                      onValueChange={(on) => run(() => setListed(voyage.id, on))}
+                      trackColor={{ true: colors.gold }}
+                    />
+                  </View>
+                </View>
+
+                {!solo && members.length === 1 && (
+                  confirming === 'one' ? (
+                    <View style={styles.card}>
+                      <Text style={styles.obstacleText}>
+                        Start now with @{members[0].handle}. No supplies, no Shore. @{members[0].handle} decides if you made it.
+                      </Text>
+                      <TouchableOpacity style={styles.btn} onPress={() => run(() => goWithOne(voyage.id))} disabled={busy}>
+                        {busy ? <ActivityIndicator color={colors.bg} /> : <Text style={styles.btnText}>Go with one</Text>}
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => setConfirming(null)}><Text style={styles.noteChange}>Keep waiting</Text></TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={styles.btnOutline} onPress={() => setConfirming('one')}>
+                      <Text style={styles.btnOutlineText}>Go with one</Text>
+                    </TouchableOpacity>
+                  )
+                )}
+              </>
             )}
 
             {isUnderway && (
-              <TouchableOpacity
-                style={[styles.btn, sailLoading && styles.btnDisabled]}
-                onPress={confirmReturn}
-                disabled={sailLoading}
-              >
-                {sailLoading
-                  ? <ActivityIndicator color={colors.bg} />
-                  : <Text style={styles.btnText}>I completed my goal</Text>}
-              </TouchableOpacity>
+              voyage.claimed_at ? (
+                <View style={styles.waitingNotice}>
+                  <Text style={styles.waitingText}>Waiting for @{members[0]?.handle} to confirm.</Text>
+                </View>
+              ) : confirming === 'done' ? (
+                <View style={styles.card}>
+                  <Text style={styles.obstacleText}>
+                    {solo ? `@${members[0]?.handle} will confirm it.` : 'Your pier will be able to acknowledge you.'}
+                  </Text>
+                  <TouchableOpacity style={styles.btn} onPress={() => run(() => claimDone(voyage.id))} disabled={busy}>
+                    {busy ? <ActivityIndicator color={colors.bg} /> : <Text style={styles.btnText}>I did it</Text>}
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setConfirming(null)}><Text style={styles.noteChange}>Not yet</Text></TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.btn} onPress={() => setConfirming('done')}>
+                  <Text style={styles.btnText}>I completed my goal</Text>
+                </TouchableOpacity>
+              )
             )}
 
             <Text style={styles.fine}>
-              Your pier cannot respond to your voyage until you complete it or the week expires.
-              They can send signals and respond to your daily pulse.
+              {solo
+                ? 'Your peer sends signals and answers your pulse.'
+                : 'Your peers send signals, answer your pulse, and talk on the Shore. You don\'t see the Shore.'}
             </Text>
           </>
         )}
 
         {tab === 'pulse' && (
           <>
-            {/* Send today's pulse */}
             <View style={styles.pulseSection}>
               <Text style={styles.pulseSectionLabel}>
                 {todaysPulse ? 'Today\'s pulse — sent' : selectedStatus ? 'Add a note' : 'How\'s today going?'}
@@ -184,38 +235,20 @@ export default function MyVoyageScreen({ route, navigation, user }) {
                 <View style={[styles.card, styles.cardPulse]}>
                   <Text style={styles.pulseSentLabel}>You sent</Text>
                   <Text style={styles.pulseSentText}>{PULSE_LABELS[todaysPulse.status]}</Text>
-                  {!!todaysPulse.note && (
-                    <Text style={styles.pulseNoteText}>{todaysPulse.note}</Text>
-                  )}
-                  {todaysPulse.piers_pulse_responses?.length > 0 && (
-                    <View style={styles.responsesBlock}>
-                      <Text style={styles.responsesLabel}>From your pier</Text>
-                      {todaysPulse.piers_pulse_responses.map((r, i) => (
-                        <Text key={i} style={styles.responseWord}>
-                          <Text style={styles.responseHandle}>@{r.piers_users?.handle} </Text>
-                          {r.word}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
+                  {!!todaysPulse.note && <Text style={styles.pulseNoteText}>{todaysPulse.note}</Text>}
+                  <Responses items={todaysPulse.responses} />
                 </View>
+              ) : !isUnderway ? (
+                <Text style={styles.empty}>Pulses open once your week starts.</Text>
               ) : selectedStatus ? (
                 <View style={styles.noteStep}>
                   <View style={[styles.pulseBtn, styles.pulseBtnSelected]}>
-                    <Text style={[styles.pulseBtnText, styles.pulseBtnTextSelected]}>
-                      {PULSE_LABELS[selectedStatus]}
-                    </Text>
+                    <Text style={[styles.pulseBtnText, styles.pulseBtnTextSelected]}>{PULSE_LABELS[selectedStatus]}</Text>
                   </View>
                   <TextInput
-                    style={styles.noteInput}
-                    placeholder="Anything to add? (optional)"
-                    placeholderTextColor={colors.textDim}
-                    value={pulseNote}
-                    onChangeText={setPulseNote}
-                    multiline
-                    maxLength={200}
-                    textAlignVertical="top"
-                    autoFocus
+                    style={styles.noteInput} placeholder="Anything to add? (optional)"
+                    placeholderTextColor={colors.textDim} value={pulseNote} onChangeText={setPulseNote}
+                    multiline maxLength={200} textAlignVertical="top" autoFocus
                   />
                   <View style={styles.noteFooter}>
                     <Text style={styles.noteCount}>{pulseNote.length}/200</Text>
@@ -224,23 +257,20 @@ export default function MyVoyageScreen({ route, navigation, user }) {
                     </TouchableOpacity>
                   </View>
                   <TouchableOpacity
-                    style={[styles.sendBtn, sendingPulse && styles.btnDisabled]}
-                    onPress={() => handleSendPulse(selectedStatus, pulseNote.trim() || null)}
-                    disabled={sendingPulse}
+                    style={[styles.sendBtn, busy && styles.btnDisabled]} disabled={busy}
+                    onPress={() => run(async () => {
+                      await sendPulse({ voyageId: voyage.id, status: selectedStatus, note: pulseNote.trim() });
+                      setSelectedStatus(null);
+                      setPulseNote('');
+                    })}
                   >
-                    {sendingPulse
-                      ? <ActivityIndicator color={colors.bg} size="small" />
-                      : <Text style={styles.sendBtnText}>Send pulse</Text>}
+                    {busy ? <ActivityIndicator color={colors.bg} size="small" /> : <Text style={styles.sendBtnText}>Send pulse</Text>}
                   </TouchableOpacity>
                 </View>
               ) : (
                 <View style={styles.pulseOptions}>
-                  {PULSE_OPTIONS.map((opt) => (
-                    <TouchableOpacity
-                      key={opt.key}
-                      style={styles.pulseBtn}
-                      onPress={() => setSelectedStatus(opt.key)}
-                    >
+                  {options.map((opt) => (
+                    <TouchableOpacity key={opt.key} style={styles.pulseBtn} onPress={() => setSelectedStatus(opt.key)}>
                       <Text style={styles.pulseBtnText}>{opt.label}</Text>
                     </TouchableOpacity>
                   ))}
@@ -248,44 +278,34 @@ export default function MyVoyageScreen({ route, navigation, user }) {
               )}
             </View>
 
-            {/* Pulse history */}
-            {loadingPulses ? (
-              <ActivityIndicator color={colors.gold} />
-            ) : pulses.filter((p) => p.date_key !== todayKey()).length > 0 && (
+            {earlier.length > 0 && (
               <>
                 <Text style={styles.pulseSectionLabel}>Earlier this week</Text>
-                {pulses
-                  .filter((p) => p.date_key !== todayKey())
-                  .map((p) => (
-                    <View key={p.id} style={[styles.card, styles.cardHistory]}>
-                      <View style={styles.historyRow}>
-                        <Text style={styles.historyDate}>{formatDate(p.date_key)}</Text>
-                        <Text style={styles.historyStatus}>{PULSE_LABELS[p.status]}</Text>
-                      </View>
-                      {!!p.note && (
-                        <Text style={styles.historyNote}>{p.note}</Text>
-                      )}
-                      {p.piers_pulse_responses?.length > 0 && (
-                        <View style={styles.responsesBlock}>
-                          {p.piers_pulse_responses.map((r, i) => (
-                            <Text key={i} style={styles.responseWord}>
-                              <Text style={styles.responseHandle}>@{r.piers_users?.handle} </Text>
-                              {r.word}
-                            </Text>
-                          ))}
-                        </View>
-                      )}
+                {earlier.map((p) => (
+                  <View key={p.id} style={[styles.card, styles.cardHistory]}>
+                    <View style={styles.historyRow}>
+                      <Text style={styles.historyDate}>{formatDate(p.date_key)}</Text>
+                      <Text style={styles.historyStatus}>{PULSE_LABELS[p.status]}</Text>
                     </View>
-                  ))}
+                    {!!p.note && <Text style={styles.historyNote}>{p.note}</Text>}
+                    <Responses items={p.responses} />
+                  </View>
+                ))}
               </>
             )}
-
-            {!loadingPulses && pulses.length === 0 && (
-              <Text style={styles.empty}>
-                No pulses yet. Send one each day to let your pier know how it's going.
-              </Text>
-            )}
           </>
+        )}
+
+        {tab === 'supplies' && (
+          solo ? (
+            <Text style={styles.empty}>You went with one. Supplies take two peers.</Text>
+          ) : supplies.length === 0 ? (
+            <Text style={styles.empty}>
+              Nothing yet. When both peers agree, supplies land here: an extra day, a rest day, a call, a sealed note, a link.
+            </Text>
+          ) : (
+            supplies.map((s) => <SupplyCard key={s.id} s={s} onOpen={openLink} />)
+          )
         )}
       </ScrollView>
     </KeyboardAvoidingView>
@@ -294,25 +314,21 @@ export default function MyVoyageScreen({ route, navigation, user }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  center: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center', alignItems: 'center', padding: 24 },
   content: { padding: 24, paddingTop: 60, gap: 16, paddingBottom: 40 },
   back: { marginBottom: 4 },
   backText: { fontFamily: fonts.regular, color: colors.textMid, fontSize: 14 },
   title: { fontFamily: fonts.bold, fontSize: 28, color: colors.text, letterSpacing: -0.5 },
   timer: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid, marginTop: -8 },
-  card: {
-    backgroundColor: colors.bgCard,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 20,
-    gap: 8,
-  },
+  card: { backgroundColor: colors.bgCard, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: 20, gap: 8 },
   cardGold: { borderColor: colors.goldBorder, backgroundColor: colors.goldBg },
   cardPulse: { borderColor: colors.goldBorder },
   cardHistory: { gap: 10 },
+  cardSealed: { borderStyle: 'dashed', borderColor: colors.blueBorder, backgroundColor: colors.blueBg },
   fieldLabel: { fontFamily: fonts.semiBold, fontSize: 11, color: colors.textMid, textTransform: 'uppercase', letterSpacing: 0.8 },
   goalText: { fontFamily: fonts.regular, fontSize: 18, color: colors.text, lineHeight: 26 },
   obstacleText: { fontFamily: fonts.regular, fontSize: 15, color: colors.textMid, lineHeight: 22 },
+  error: { fontFamily: fonts.regular, fontSize: 13, color: colors.rose },
 
   tabs: { flexDirection: 'row', gap: 8 },
   tab: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
@@ -325,11 +341,21 @@ const styles = StyleSheet.create({
   memberJoined: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim },
   waitingNotice: { backgroundColor: colors.goldBg, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.goldBorder, padding: 14 },
   waitingText: { fontFamily: fonts.regular, fontSize: 13, color: colors.gold },
+  code: { fontFamily: fonts.bold, fontSize: 28, color: colors.text, letterSpacing: 4 },
+  switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  switchLabel: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMid },
   empty: { fontFamily: fonts.regular, fontSize: 14, color: colors.textDim, lineHeight: 20 },
   btn: { backgroundColor: colors.gold, borderRadius: radius.md, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   btnDisabled: { opacity: 0.5 },
   btnText: { fontFamily: fonts.semiBold, fontSize: 16, color: colors.bg },
+  btnOutline: { borderWidth: 1, borderColor: colors.goldBorder, borderRadius: radius.md, paddingVertical: 12, alignItems: 'center' },
+  btnOutlineText: { fontFamily: fonts.semiBold, fontSize: 14, color: colors.gold },
   fine: { fontFamily: fonts.regular, fontSize: 12, color: colors.textDim, textAlign: 'center', lineHeight: 18 },
+
+  supplyKind: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.text },
+  supplyBody: { fontFamily: fonts.regular, fontSize: 15, color: colors.textMid, lineHeight: 22 },
+  sealedText: { fontFamily: fonts.italic, fontSize: 14, color: colors.blue },
+  link: { fontFamily: fonts.regular, fontSize: 14, color: colors.blue, textDecorationLine: 'underline' },
 
   pulseSection: { gap: 12 },
   pulseSectionLabel: { fontFamily: fonts.semiBold, fontSize: 11, color: colors.textMid, textTransform: 'uppercase', letterSpacing: 0.8 },
@@ -342,7 +368,6 @@ const styles = StyleSheet.create({
   pulseSentText: { fontFamily: fonts.regular, fontSize: 17, color: colors.text },
   pulseNoteText: { fontFamily: fonts.italic, fontSize: 14, color: colors.textMid, lineHeight: 20 },
   responsesBlock: { gap: 6, marginTop: 4 },
-  responsesLabel: { fontFamily: fonts.semiBold, fontSize: 10, color: colors.textDim, textTransform: 'uppercase', letterSpacing: 0.8 },
   responseWord: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMid, lineHeight: 20 },
   responseHandle: { fontFamily: fonts.semiBold, color: colors.blue },
   historyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
@@ -352,14 +377,12 @@ const styles = StyleSheet.create({
 
   noteStep: { gap: 10 },
   noteInput: {
-    backgroundColor: colors.bgCard, borderRadius: radius.sm,
-    borderWidth: 1, borderColor: colors.border, padding: 14,
-    fontFamily: fonts.regular, fontSize: 15, color: colors.text,
-    minHeight: 80, lineHeight: 22,
+    backgroundColor: colors.bgCard, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, padding: 14,
+    fontFamily: fonts.regular, fontSize: 15, color: colors.text, minHeight: 80, lineHeight: 22,
   },
   noteFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   noteCount: { fontFamily: fonts.regular, fontSize: 11, color: colors.textDim },
-  noteChange: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid },
+  noteChange: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid, textAlign: 'center' },
   sendBtn: { backgroundColor: colors.blue, borderRadius: radius.md, paddingVertical: 14, alignItems: 'center' },
   sendBtnText: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.bg },
 });

@@ -1,8 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
+import { localRpc } from './local/engine';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+// Local, on-device world with simulated peers unless EXPO_PUBLIC_PIERS_BACKEND=supabase.
+export const IS_LOCAL = process.env.EXPO_PUBLIC_PIERS_BACKEND !== 'supabase';
 
 const ExpoSecureStoreAdapter = {
   getItem: (key) => SecureStore.getItemAsync(key),
@@ -10,7 +14,7 @@ const ExpoSecureStoreAdapter = {
   removeItem: (key) => SecureStore.deleteItemAsync(key),
 };
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = IS_LOCAL ? null : createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: ExpoSecureStoreAdapter,
     autoRefreshToken: true,
@@ -18,6 +22,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: false,
   },
 });
+
+async function call(fn, args) {
+  if (IS_LOCAL) return localRpc(fn, args);
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) throw new Error(error.message);
+  return data;
+}
 
 // ── Pulse constants ───────────────────────────────────────────────────────────
 
@@ -28,238 +39,94 @@ export const PULSE_OPTIONS = [
   { key: 'rough_one', label: 'Had a rough one.' },
 ];
 
+export const PULSE_LABELS = {
+  ...Object.fromEntries(PULSE_OPTIONS.map((o) => [o.key, o.label])),
+  rest_day: 'Rest day.',
+};
+
 export const RESPONSE_WORDS = [
   'Proud.', 'Keep going.', 'Strength.', 'I see you.',
   'Steady.', "You've got this.", 'Still here.', 'Onwards.',
   'Real.', 'Good.', 'Hold on.', 'Together.',
 ];
 
-function todayKey() {
+let sessionToken = null;
+
+export function setSessionToken(token) {
+  sessionToken = token || null;
+}
+
+const rpc = (fn, args = {}) => call(fn, { p_token: sessionToken, ...args });
+
+export const MAX_WATCHING = 10;
+
+export const SUPPLY_KINDS = [
+  { key: 'extra_day', label: '+1 day', hint: 'Adds a day to their week.' },
+  { key: 'rest_day', label: 'Rest day', hint: 'One day off. No gap in their pulse.' },
+  { key: 'call', label: 'Call', hint: 'Offer a time to talk.', field: 'body', placeholder: 'e.g. Free Thu 7pm' },
+  { key: 'sealed_note', label: 'Sealed note', hint: 'Opens when they finish.', field: 'body', placeholder: 'What you want them to read at the end' },
+  { key: 'link', label: 'Link', hint: 'A tool, a read, a playlist.', field: 'url', placeholder: 'https://' },
+];
+
+export function supplyLabel(kind) {
+  return SUPPLY_KINDS.find((k) => k.key === kind)?.label ?? kind;
+}
+
+// ── Identity ──────────────────────────────────────────────────────────────────
+
+export const createUser = (handle) => call('piers_create_user', { p_handle: handle });
+export const getMe = (token) => call('piers_me', { p_token: token });
+
+export const setOpenToWatch = (on) => rpc('piers_set_open_to_watch', { p_on: on });
+
+// ── Reads ─────────────────────────────────────────────────────────────────────
+
+export const getHome = () => rpc('piers_home');
+export const getVoyageDetail = (voyageId) => rpc('piers_voyage_detail', { p_voyage: voyageId });
+export const getHarbor = () => rpc('piers_harbor');
+export const getLogbook = () => rpc('piers_logbook');
+
+// ── Pursuer ───────────────────────────────────────────────────────────────────
+
+export const castOff = ({ goal, obstacle, mode, listed }) =>
+  rpc('piers_cast_off', { p_goal: goal, p_obstacle: obstacle, p_mode: mode, p_listed: listed });
+export const goWithOne = (voyageId) => rpc('piers_go_with_one', { p_voyage: voyageId });
+export const setListed = (voyageId, listed) => rpc('piers_set_listed', { p_voyage: voyageId, p_listed: listed });
+export const claimDone = (voyageId) => rpc('piers_claim_done', { p_voyage: voyageId });
+export const sendPulse = ({ voyageId, status, note }) =>
+  rpc('piers_send_pulse', { p_voyage: voyageId, p_status: status, p_note: note || null });
+export const reckon = (voyageId, text) => rpc('piers_reckon', { p_voyage: voyageId, p_text: text });
+export const openSupply = (supplyId) => rpc('piers_open_supply', { p_supply: supplyId });
+
+// ── Peers ─────────────────────────────────────────────────────────────────────
+
+export const joinPier = (voyageId) => rpc('piers_join', { p_voyage: voyageId });
+export const joinByCode = (code) => rpc('piers_join_code', { p_code: code });
+export const joinRandom = () => rpc('piers_join_random');
+export const confirmDone = (voyageId, confirm) => rpc('piers_confirm_done', { p_voyage: voyageId, p_confirm: confirm });
+export const sendSignal = ({ voyageId, quote, author }) =>
+  rpc('piers_send_signal', { p_voyage: voyageId, p_quote: quote, p_author: author || null });
+export const respondToPulse = ({ pulseId, word }) => rpc('piers_respond_pulse', { p_pulse: pulseId, p_word: word });
+export const acknowledge = ({ voyageId, text }) => rpc('piers_acknowledge', { p_voyage: voyageId, p_text: text });
+export const sendShore = (voyageId, body) => rpc('piers_shore_send', { p_voyage: voyageId, p_body: body });
+export const proposeSupply = ({ voyageId, kind, body, url }) =>
+  rpc('piers_supply_propose', { p_voyage: voyageId, p_kind: kind, p_body: body || null, p_url: url || null });
+export const cosignSupply = (supplyId) => rpc('piers_supply_cosign', { p_supply: supplyId });
+export const declineSupply = (supplyId) => rpc('piers_supply_decline', { p_supply: supplyId });
+
+// ── Safety ────────────────────────────────────────────────────────────────────
+
+export const reportUser = ({ userId, voyageId, messageId, reason }) =>
+  rpc('piers_report', { p_target: userId, p_voyage: voyageId || null, p_message: messageId || null, p_reason: reason || null });
+export const blockUser = (userId) => rpc('piers_block', { p_target: userId });
+
+// ── Dev ───────────────────────────────────────────────────────────────────────
+
+export const devSeed = () => rpc('piers_dev_seed');
+export const devFill = () => rpc('piers_dev_fill');
+export const devAdvanceDay = () => rpc('piers_dev_advance');
+export const devReset = () => rpc('piers_dev_reset');
+
+export function todayKey() {
   return new Date().toISOString().slice(0, 10);
-}
-
-// ── Goals ─────────────────────────────────────────────────────────────────────
-
-export async function castOff({ userId, goal, obstacle }) {
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data, error } = await supabase
-    .from('piers_voyages')
-    .insert({ user_id: userId, goal, obstacle, status: 'open', expires_at: expiresAt })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-}
-
-export async function getOpenVoyages(excludeUserId) {
-  const { data, error } = await supabase
-    .from('piers_voyages')
-    .select('*, piers_users(handle)')
-    .eq('status', 'open')
-    .neq('user_id', excludeUserId)
-    .order('created_at', { ascending: true })
-    .limit(40);
-  if (error) throw error;
-  return data || [];
-}
-
-export async function getMyVoyage(userId) {
-  const { data, error } = await supabase
-    .from('piers_voyages')
-    .select('*')
-    .eq('user_id', userId)
-    .in('status', ['open', 'underway'])
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
-export async function sailHome(voyageId) {
-  const { error } = await supabase
-    .from('piers_voyages')
-    .update({ status: 'returned', completed_at: new Date().toISOString() })
-    .eq('id', voyageId);
-  if (error) throw error;
-}
-
-// ── Pier members ──────────────────────────────────────────────────────────────
-
-export async function getPierMembers(voyageId) {
-  const { data, error } = await supabase
-    .from('piers_pier_members')
-    .select('*, piers_users(handle)')
-    .eq('voyage_id', voyageId);
-  if (error) throw error;
-  return data || [];
-}
-
-export async function joinPier({ voyageId, userId }) {
-  // Allow up to 3 concurrent pier memberships
-  const { data: existing, error: checkErr } = await supabase
-    .from('piers_pier_members')
-    .select('id')
-    .eq('user_id', userId)
-    .is('acknowledged_at', null);
-  if (checkErr) throw checkErr;
-  if (existing?.length >= 3) {
-    throw new Error('You are already supporting three people. That\'s the limit — acknowledge one first.');
-  }
-
-  const { error } = await supabase
-    .from('piers_pier_members')
-    .insert({ voyage_id: voyageId, user_id: userId });
-  if (error) throw error;
-
-  const { data: members } = await supabase
-    .from('piers_pier_members')
-    .select('id')
-    .eq('voyage_id', voyageId);
-
-  if (members?.length >= 2) {
-    await supabase
-      .from('piers_voyages')
-      .update({ status: 'underway' })
-      .eq('id', voyageId);
-  }
-}
-
-export async function getActiveMemberships(userId) {
-  const { data, error } = await supabase
-    .from('piers_pier_members')
-    .select('*, piers_voyages(*, piers_users(handle))')
-    .eq('user_id', userId)
-    .is('acknowledged_at', null)
-    .limit(3);
-  if (error) throw error;
-  return data || [];
-}
-
-export async function acknowledge({ voyageId, userId, text }) {
-  const { error } = await supabase
-    .from('piers_pier_members')
-    .update({ acknowledged_at: new Date().toISOString(), acknowledgement: text })
-    .eq('voyage_id', voyageId)
-    .eq('user_id', userId);
-  if (error) throw error;
-}
-
-// ── Signals (quotes/inspiration) ──────────────────────────────────────────────
-
-export async function getSignals(voyageId) {
-  const { data, error } = await supabase
-    .from('piers_signals')
-    .select('*, piers_users(handle)')
-    .eq('voyage_id', voyageId)
-    .order('created_at', { ascending: true });
-  if (error) throw error;
-  return data || [];
-}
-
-export async function sendSignal({ voyageId, senderId, quote, author }) {
-  const { error } = await supabase
-    .from('piers_signals')
-    .insert({ voyage_id: voyageId, sender_id: senderId, quote, author: author || null });
-  if (error) throw error;
-}
-
-// ── Pulses ────────────────────────────────────────────────────────────────────
-
-export async function sendPulse({ voyageId, status, note }) {
-  const { error } = await supabase
-    .from('piers_pulses')
-    .upsert(
-      { voyage_id: voyageId, status, note: note || null, date_key: todayKey() },
-      { onConflict: 'voyage_id,date_key' }
-    );
-  if (error) throw error;
-}
-
-export async function getPulses(voyageId) {
-  const { data, error } = await supabase
-    .from('piers_pulses')
-    .select('*, piers_pulse_responses(*, piers_users(handle))')
-    .eq('voyage_id', voyageId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
-}
-
-export async function respondToPulse({ pulseId, senderId, word }) {
-  const { error } = await supabase
-    .from('piers_pulse_responses')
-    .upsert(
-      { pulse_id: pulseId, sender_id: senderId, word },
-      { onConflict: 'pulse_id,sender_id' }
-    );
-  if (error) throw error;
-}
-
-// ── History ───────────────────────────────────────────────────────────────────
-
-export async function getPastVoyages(userId) {
-  const { data, error } = await supabase
-    .from('piers_voyages')
-    .select('*')
-    .eq('user_id', userId)
-    .in('status', ['returned', 'lost'])
-    .order('created_at', { ascending: false })
-    .limit(20);
-  if (error) throw error;
-  return data || [];
-}
-
-// ── Dev seeder ────────────────────────────────────────────────────────────────
-
-const FAKE_USERS = [
-  { handle: 'marco_d' },
-  { handle: 'suli_w' },
-  { handle: 'priya_k' },
-  { handle: 'cam_r' },
-  { handle: 'nadia_t' },
-];
-
-const FAKE_VOYAGES = [
-  { goal: 'Finish the first draft of my short story — all three scenes written by Sunday.', obstacle: 'I keep editing as I go instead of just getting words on the page.' },
-  { goal: 'Call my dad three times this week. Not text — actually call.', obstacle: 'I always find an excuse when the moment comes.' },
-  { goal: 'Run four times this week, minimum 20 minutes each.', obstacle: 'Morning motivation. I never want to start.' },
-  { goal: 'Spend zero money on things I don\'t need. No impulse buys, no apps, no food delivery.', obstacle: 'Stress-buying when work gets hard.' },
-  { goal: 'Read for 30 minutes every night before bed instead of scrolling.', obstacle: 'My phone is always within reach and it\'s too easy to grab.' },
-];
-
-export async function seedOpenVoyages() {
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const results = [];
-  for (let i = 0; i < 3; i++) {
-    const { data: user } = await supabase
-      .from('piers_users')
-      .upsert({ handle: FAKE_USERS[i].handle }, { onConflict: 'handle' })
-      .select().single();
-    if (!user) continue;
-    const { data: voyage } = await supabase
-      .from('piers_voyages')
-      .insert({ user_id: user.id, goal: FAKE_VOYAGES[i].goal, obstacle: FAKE_VOYAGES[i].obstacle, status: 'open', expires_at: expiresAt })
-      .select().single();
-    if (voyage) results.push(voyage);
-  }
-  return results;
-}
-
-export async function seedPierMembers(voyageId) {
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  for (let i = 3; i < 5; i++) {
-    const { data: user } = await supabase
-      .from('piers_users')
-      .upsert({ handle: FAKE_USERS[i].handle }, { onConflict: 'handle' })
-      .select().single();
-    if (!user) continue;
-    await supabase.from('piers_voyages').insert({
-      user_id: user.id, goal: FAKE_VOYAGES[i % FAKE_VOYAGES.length].goal,
-      obstacle: FAKE_VOYAGES[i % FAKE_VOYAGES.length].obstacle, status: 'open', expires_at: expiresAt,
-    });
-    await supabase.from('piers_pier_members')
-      .upsert({ voyage_id: voyageId, user_id: user.id }, { onConflict: 'voyage_id,user_id' });
-  }
-  await supabase.from('piers_voyages').update({ status: 'underway' }).eq('id', voyageId);
 }

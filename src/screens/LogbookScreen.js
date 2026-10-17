@@ -3,38 +3,12 @@ import {
   View, Text, ScrollView, StyleSheet, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
-import { supabase } from '../lib/supabase';
+import { getLogbook } from '../lib/supabase';
 
 function formatDate(ts) {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-async function getLogbook(userId) {
-  const { data: voyages, error } = await supabase
-    .from('piers_voyages')
-    .select('*')
-    .eq('user_id', userId)
-    .in('status', ['returned', 'lost'])
-    .order('created_at', { ascending: false })
-    .limit(30);
-  if (error) throw error;
-
-  const ids = (voyages || []).map((v) => v.id);
-  let ackMap = {};
-  if (ids.length > 0) {
-    const { data: acks } = await supabase
-      .from('piers_pier_members')
-      .select('voyage_id, acknowledgement, piers_users(handle)')
-      .in('voyage_id', ids)
-      .not('acknowledged_at', 'is', null);
-    (acks || []).forEach((a) => {
-      if (!ackMap[a.voyage_id]) ackMap[a.voyage_id] = [];
-      ackMap[a.voyage_id].push(a);
-    });
-  }
-
-  return (voyages || []).map((v) => ({ ...v, acknowledgements: ackMap[v.id] || [] }));
-}
 
 export default function LogbookScreen({ user }) {
   const [entries, setEntries] = useState([]);
@@ -42,7 +16,7 @@ export default function LogbookScreen({ user }) {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    try { setEntries(await getLogbook(user.id)); }
+    try { setEntries(await getLogbook()); }
     catch (e) { console.error(e); }
   }, [user.id]);
 
@@ -144,7 +118,7 @@ export default function LogbookScreen({ user }) {
                       <Text style={s.acksLabel}>From the pier</Text>
                       {v.acknowledgements.map((a, i) => (
                         <Text key={i} style={s.ack}>
-                          <Text style={s.ackHandle}>@{a.piers_users?.handle} </Text>
+                          <Text style={s.ackHandle}>@{a.handle} </Text>
                           {a.acknowledgement}
                         </Text>
                       ))}

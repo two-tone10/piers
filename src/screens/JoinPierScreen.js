@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
 import { joinPier } from '../lib/supabase';
@@ -17,14 +17,15 @@ function timeLeft(expiresAt) {
 export default function JoinPierScreen({ route, navigation, user }) {
   const { voyage } = route.params;
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   async function handleJoin() {
     setLoading(true);
     try {
-      await joinPier({ voyageId: voyage.id, userId: user.id });
-      navigation.goBack();
+      await joinPier(voyage.id);
+      navigation.replace('PierWatch', { voyageId: voyage.id, handle: voyage.handle });
     } catch (e) {
-      Alert.alert('Can\'t stand here', e.message);
+      setError(e.message);
     } finally {
       setLoading(false);
     }
@@ -39,8 +40,8 @@ export default function JoinPierScreen({ route, navigation, user }) {
       <View style={s.heading}>
         <Text style={s.title}>Stand on their pier.</Text>
         <Text style={s.sub}>
-          You'll hold the shore while they go out and do this.
-          No coaching. No checking in. Just presence.
+          You hold the shore while they go do it.
+          {voyage.mode === 'solo' ? ' You\'re their only peer.' : ' You\'ll share it with one other peer.'}
         </Text>
       </View>
 
@@ -57,7 +58,7 @@ export default function JoinPierScreen({ route, navigation, user }) {
       </View>
 
       <View style={s.metaRow}>
-        <Text style={s.metaHandle}>@{voyage.piers_users?.handle}</Text>
+        <Text style={s.metaHandle}>@{voyage.handle}</Text>
         <Text style={s.metaTimer}>{timeLeft(voyage.expires_at)}</Text>
       </View>
 
@@ -67,11 +68,13 @@ export default function JoinPierScreen({ route, navigation, user }) {
         <Text style={s.commitmentTitle}>What you're agreeing to</Text>
         <View style={s.commitmentList}>
           {[
-            'You can send them words of support during the week.',
-            'You can respond to their daily pulse with one word.',
-            'You cannot comment, question, or intervene.',
-            'When they return — or the week ends — you acknowledge them.',
-            'You can stand on up to three piers at a time.',
+            'Send them signals. Answer their daily pulse with one word.',
+            ...(voyage.mode === 'solo'
+              ? ['You alone decide if they made it.']
+              : ['Talk with the other peer on the Shore. They never see it.',
+                 'Agree together to send supplies: an extra day, a rest day, a call, a sealed note, a link.']),
+            'When the week ends, acknowledge them.',
+            'You can stand on up to 10 piers at a time.',
           ].map((line, i) => (
             <View key={i} style={s.commitmentItem}>
               <View style={s.commitmentDot} />
@@ -80,6 +83,8 @@ export default function JoinPierScreen({ route, navigation, user }) {
           ))}
         </View>
       </View>
+
+      {!!error && <Text style={s.error}>{error}</Text>}
 
       <TouchableOpacity
         style={[s.btn, loading && s.btnDisabled]}
@@ -106,6 +111,7 @@ const s = StyleSheet.create({
   sub: { fontFamily: fonts.light, fontSize: 15, color: colors.textMid, lineHeight: 23 },
 
   rule: { height: 1, backgroundColor: colors.border },
+  error: { fontFamily: fonts.regular, fontSize: 13, color: colors.rose },
 
   goalCard: {
     backgroundColor: colors.bgCard,

@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { colors, radius, fonts } from '../lib/theme';
-import { supabase } from '../lib/supabase';
+import { getHarbor } from '../lib/supabase';
 
 function timeAgo(ts) {
   const diff = Date.now() - new Date(ts);
@@ -13,16 +13,6 @@ function timeAgo(ts) {
   return `${days} days ago`;
 }
 
-async function getHarbor() {
-  const { data, error } = await supabase
-    .from('piers_voyages')
-    .select('*, piers_users(handle)')
-    .eq('status', 'returned')
-    .order('completed_at', { ascending: false })
-    .limit(40);
-  if (error) throw error;
-  return data || [];
-}
 
 export default function HarborScreen({ navigation }) {
   const [voyages, setVoyages] = useState([]);
@@ -81,7 +71,7 @@ export default function HarborScreen({ navigation }) {
           {voyages.map((v, idx) => (
             <View key={v.id} style={[s.card, idx < voyages.length - 1 && s.cardBorder]}>
               <View style={s.cardTop}>
-                <Text style={s.handle}>@{v.piers_users?.handle}</Text>
+                <Text style={s.handle}>@{v.handle}</Text>
                 <Text style={s.when}>{timeAgo(v.completed_at)}</Text>
               </View>
 

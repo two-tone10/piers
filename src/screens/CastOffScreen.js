@@ -6,9 +6,23 @@ import {
 import { colors, radius, fonts } from '../lib/theme';
 import { castOff } from '../lib/supabase';
 
+function Choice({ on, onPress, title, body }) {
+  return (
+    <TouchableOpacity style={[s.choice, on && s.choiceOn]} onPress={onPress} activeOpacity={0.8}>
+      <View style={[s.radio, on && s.radioOn]} />
+      <View style={s.choiceBody}>
+        <Text style={[s.choiceTitle, on && s.choiceTitleOn]}>{title}</Text>
+        <Text style={s.choiceText}>{body}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 export default function CastOffScreen({ route, navigation, user }) {
   const [goal, setGoal] = useState('');
   const [obstacle, setObstacle] = useState('');
+  const [mode, setMode] = useState('pair');
+  const [listed, setListed] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -18,8 +32,8 @@ export default function CastOffScreen({ route, navigation, user }) {
     setError('');
     setLoading(true);
     try {
-      await castOff({ userId: user.id, goal: goal.trim(), obstacle: obstacle.trim() });
-      navigation.goBack();
+      const v = await castOff({ goal: goal.trim(), obstacle: obstacle.trim(), mode, listed });
+      navigation.replace('MyVoyage', { voyageId: v.id });
     } catch (e) {
       setError(e.message || 'Something went wrong.');
     } finally {
@@ -76,6 +90,34 @@ export default function CastOffScreen({ route, navigation, user }) {
           <Text style={s.count}>{obstacle.length}/300</Text>
         </View>
 
+        <View style={s.field}>
+          <Text style={s.prompt}>Your pier</Text>
+          <Choice
+            on={mode === 'pair'} onPress={() => setMode('pair')}
+            title="Wait for two"
+            body="Your two peers talk on the Shore and can agree to send you supplies."
+          />
+          <Choice
+            on={mode === 'solo'} onPress={() => setMode('solo')}
+            title="Go with one"
+            body="Start as soon as one peer joins. No supplies. Your one peer decides if you made it."
+          />
+        </View>
+
+        <View style={s.field}>
+          <Text style={s.prompt}>How they find you</Text>
+          <Choice
+            on={listed} onPress={() => setListed(true)}
+            title="Open water"
+            body="Anyone can find your goal. People open to watch get matched to you."
+          />
+          <Choice
+            on={!listed} onPress={() => setListed(false)}
+            title="Invite only"
+            body="Share your pier code with the people you want."
+          />
+        </View>
+
         {!!error && <Text style={s.error}>{error}</Text>}
 
         <TouchableOpacity
@@ -89,8 +131,8 @@ export default function CastOffScreen({ route, navigation, user }) {
         </TouchableOpacity>
 
         <Text style={s.fine}>
-          Two people will find your goal and stand on your pier.{'\n'}
-          They can only send words of support — nothing more.
+          You get a pier code either way.{'\n'}
+          Your peers can't step in. They can only stand by you.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -127,6 +169,18 @@ const s = StyleSheet.create({
     minHeight: 88, lineHeight: 26,
   },
   count: { fontFamily: fonts.regular, fontSize: 11, color: colors.textDim, textAlign: 'right' },
+
+  choice: {
+    flexDirection: 'row', gap: 12, padding: 14, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  choiceOn: { borderColor: colors.goldBorder, backgroundColor: colors.goldBg },
+  radio: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: colors.textDim, marginTop: 2 },
+  radioOn: { borderColor: colors.gold, backgroundColor: colors.gold },
+  choiceBody: { flex: 1, gap: 3 },
+  choiceTitle: { fontFamily: fonts.semiBold, fontSize: 15, color: colors.text },
+  choiceTitleOn: { color: colors.gold },
+  choiceText: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMid, lineHeight: 19 },
 
   error: { fontFamily: fonts.regular, fontSize: 13, color: colors.rose },
 

@@ -156,7 +156,7 @@ function HowStep({ onNext }) {
   const steps = [
     { num: '01', title: 'Set a precise goal', body: 'One goal. One week. Name the thing you\'re most likely to use as an excuse not to do it.' },
     { num: '02', title: 'Two people find you', body: 'Your goal appears to others who are also out here. Two of them choose to stand on your pier.' },
-    { num: '03', title: 'They hold the shore', body: 'Your pier can\'t intervene. They can send words of support during the week. That\'s it.' },
+    { num: '03', title: 'They hold the shore', body: 'Your peers can\'t step in. They send signals, talk on the Shore, and can agree to send you supplies.' },
     { num: '04', title: 'You return — or you don\'t', body: 'When the week ends, you reckon with what happened. Your pier is there for that too.' },
   ];
 
